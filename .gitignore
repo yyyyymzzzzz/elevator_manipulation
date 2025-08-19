@@ -1,0 +1,14 @@
+# Ignore all build/ and dist/ directories recursively
+**/build/
+**/log/
+**/install/
+**/dist/
+**/__pycache__/
+**/*.pyc
+**/*.o
+**/*.out
+**/*.class
+**/*.exe
+**/.ipynb_checkpoints/
+**/.DS_Store
+**/.vscode/
