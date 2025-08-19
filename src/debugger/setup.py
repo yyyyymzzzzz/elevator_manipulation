@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'elevator_perception'
+package_name = 'debugger'
 
 setup(
     name=package_name,
@@ -20,7 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'button_detector_node = elevator_perception.button_detector_node:main',
+            'camera_simulator_node = debugger.camera_simulator_node:main',
         ],
     },
 )
