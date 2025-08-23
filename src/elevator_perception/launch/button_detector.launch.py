@@ -8,7 +8,7 @@ from ament_index_python.packages import get_package_share_directory
 def generate_launch_description():
     # 获取参数文件路径
     config_file = os.path.join(
-        '/Users/ymz/Workspace/elevator_manipulation/config',
+        '/home/ymz/Workspace/elevator_manipulation/config',
         'button_detector_params.yaml'
     )
     

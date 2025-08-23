@@ -18,7 +18,7 @@ class CameraSimulator(Node):
         self.bridge = CvBridge()
         
         # 设置数据路径
-        self.data_path = '/Users/ymz/Workspace/elevator_manipulation/data'
+        self.data_path = '/home/ymz/Workspace/elevator_manipulation/data'
         self.train_images = glob.glob(os.path.join(self.data_path, 'train/images/*.jpg'))
         self.test_images = glob.glob(os.path.join(self.data_path, 'test/images/*.jpg'))
         
