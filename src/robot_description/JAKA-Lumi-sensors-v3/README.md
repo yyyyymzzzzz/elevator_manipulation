@@ -31,7 +31,7 @@
 ### 构建包
 ```bash
 cd ~/ros2_ws
-colcon build --packages-select jaka_lumi_sensors_v3
+colcon build --packages-select robot_description
 source install/setup.bash
 ```
 
