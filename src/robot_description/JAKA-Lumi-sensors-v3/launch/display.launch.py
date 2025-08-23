@@ -16,7 +16,7 @@ def generate_launch_description():
     
     # Define paths
     default_model_path = os.path.join(pkg_share, 'urdf', 'jaka_lumi_sensors_v3.urdf')
-    default_rviz_config_path = os.path.join(pkg_share, 'urdf.rviz')
+    default_rviz_config_path = os.path.join(pkg_share, 'config', 'urdf.rviz')
     
     # Declare launch arguments
     model_arg = DeclareLaunchArgument(
@@ -63,6 +63,6 @@ def generate_launch_description():
         model_arg,
         rviz_arg,
         robot_state_publisher_node,
-        joint_state_publisher_gui_node,
+        # joint_state_publisher_gui_node,
         rviz_node
     ])

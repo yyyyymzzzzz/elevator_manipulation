@@ -20,6 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'arm_controller = elevator_arm_control.arm_controller:main',
         ],
     },
 )

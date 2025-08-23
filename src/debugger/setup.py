@@ -21,6 +21,8 @@ setup(
     entry_points={
         'console_scripts': [
             'camera_simulator_node = debugger.camera_simulator_node:main',
+            'target_pose_publisher = debugger.target_pose_publisher:main',
+            'visualization_helper = debugger.visualization_helper:main',
         ],
     },
 )
