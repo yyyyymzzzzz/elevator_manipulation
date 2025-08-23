@@ -12,7 +12,7 @@ class ButtonDetector(Node):
         self.declare_parameters(
             namespace='',
             parameters=[
-                ('model_path', '/Users/ymz/Workspace/elevator_manipulation/model/result/AdamW/weights/best.pt')
+                ('model_path', '/home/ymz/Workspace/elevator_manipulation/model/result/AdamW/weights/best.pt')
             ]
         )
         
