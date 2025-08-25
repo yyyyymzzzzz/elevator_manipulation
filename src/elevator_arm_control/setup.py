@@ -21,6 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
             'arm_controller = elevator_arm_control.arm_controller:main',
+            'arm_pose_calculator = elevator_arm_control.arm_pose_calculator:main',
         ],
     },
 )
