@@ -15,7 +15,7 @@ class TargetPosePublisher(Node):
         self.pose_publisher = self.create_publisher(PoseStamped, '/arm/target_pose', 10)
         
         # 创建定时器，每2秒发布一个新的目标位姿
-        self.timer = self.create_timer(5.0, self.publish_target_pose)
+        self.timer = self.create_timer(20.0, self.publish_target_pose)
         
         # 预定义的目标位置列表
         self.target_positions = [
