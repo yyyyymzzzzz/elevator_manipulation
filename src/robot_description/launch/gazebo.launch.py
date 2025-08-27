@@ -12,7 +12,7 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 def generate_launch_description():
     # Get the package directory
-    pkg_share = get_package_share_directory('jaka_lumi_sensors_v3')
+    pkg_share = get_package_share_directory('robot_description')
     gazebo_ros_dir = get_package_share_directory('gazebo_ros')
     
     # Define paths
@@ -62,7 +62,7 @@ def generate_launch_description():
         executable='spawn_entity.py',
         name='spawn_entity',
         arguments=[
-            '-entity', 'jaka_lumi_sensors_v3',
+            '-entity', 'robot_description',
             '-file', LaunchConfiguration('model'),
             '-x', '0.0',
             '-y', '0.0',

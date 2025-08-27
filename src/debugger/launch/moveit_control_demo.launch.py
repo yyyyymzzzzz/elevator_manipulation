@@ -7,7 +7,7 @@ from moveit_configs_utils import MoveItConfigsBuilder
 def generate_launch_description():
     # 获取包路径
     robot_description_path = os.path.join(
-        get_package_share_directory("jaka_lumi_sensors_v3"),
+        get_package_share_directory("robot_description"),
         "urdf",
         "jaka_lumi_sensors_v3.urdf"
     )

@@ -12,7 +12,7 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 def generate_launch_description():
     # Get the package directory
-    pkg_share = get_package_share_directory('jaka_lumi_sensors_v3')
+    pkg_share = get_package_share_directory('robot_description')
     
     # Define paths
     default_model_path = os.path.join(pkg_share, 'urdf', 'jaka_lumi_sensors_v3.urdf')
