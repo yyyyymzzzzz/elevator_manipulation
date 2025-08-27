@@ -3,69 +3,45 @@
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
-from std_msgs.msg import Header, Float64MultiArray, Bool
+from trajectory_msgs.msg import JointTrajectory
+from std_msgs.msg import Header, Float64MultiArray
 from std_srvs.srv import SetBool
 import math
 import jkrc
 import requests
 import json
 import time
-import threading
 
 class ArmController(Node):
     def __init__(self):
         super().__init__('arm_controller')
-        
+
         # 机械臂和Body控制配置
         self.arm_ip = "192.168.10.90"
-        self.body_api_url = "http://192.168.10.90:5000/api/extaxis"
         
         # JAKA机械臂连接
         self.arm_robot = None
         self.arm_connected = False
         self.arm_enabled = False
         
-        # Body控制URLs
-        self.body_urls = {
-            'enable': self.body_api_url + "/enable",
-            'reset': self.body_api_url + "/reset", 
-            'moveto': self.body_api_url + "/moveto",
-            'status': self.body_api_url + "/status",
-            'sysinfo': self.body_api_url + "/sysinfo"
-        }
-        
-        # 订阅关节状态（来自arm_pose_calculator）
-        self.joint_subscriber = self.create_subscription(
-            JointState,
-            '/arm/calculated_joints',
-            self.joint_state_callback,
+        # 订阅由MoveIt2生成的轨迹
+        self.trajectory_subscriber = self.create_subscription(
+            JointTrajectory,
+            '/jaka_arm_controller/joint_trajectory', 
+            self.execute_trajectory_callback,
             10
         )
         
-        # # 发布最终关节状态（给RViz等工具使用）
-        # self.joint_publisher = self.create_publisher(JointState, '/joint_states', 10)
-        
-        # 订阅机械臂关节控制命令（从ROS2话题接收6DOF机械臂控制）
-        self.arm_joint_subscriber = self.create_subscription(
+        # **新增**: 订阅来自trajectory_controller的关节命令
+        self.joint_command_subscriber = self.create_subscription(
             Float64MultiArray,
             '/arm/joint_command',
-            self.arm_joint_callback,
+            self.joint_command_callback,
             10
         )
         
-        # 订阅Body控制命令
-        self.body_command_subscriber = self.create_subscription(
-            Float64MultiArray,
-            '/body/command',
-            self.body_command_callback,
-            10
-        )
-        
-        # 发布机械臂状态
-        self.arm_status_publisher = self.create_publisher(Bool, '/arm/status', 10)
-        
-        # 发布Body状态
-        self.body_status_publisher = self.create_publisher(Float64MultiArray, '/body/status', 10)
+        # **新增**: 发布最终关节状态 (给RViz和MoveIt使用)
+        self.joint_publisher = self.create_publisher(JointState, '/joint_states', 10)
         
         # 服务：机械臂使能/禁用
         self.arm_enable_service = self.create_service(
@@ -74,88 +50,36 @@ class ArmController(Node):
             self.arm_enable_callback
         )
         
-        # 服务：Body使能/禁用
-        self.body_enable_service = self.create_service(
-            SetBool,
-            '/body/enable', 
-            self.body_enable_callback
-        )
-        
-        # 机械臂关节名称（基于URDF文件分析）
+        # 机械臂关节名称
         self.joint_names = [
-            'l_1',    # 升降关节 (prismatic)
-            'l_2',    # 机械臂底座旋转 (revolute)
-            'l_3',    # 机械臂第二关节 (revolute) 
-            'l_4',    # 机械臂第三关节 (revolute) - 这个控制头部，需要小心控制
-            'l_a1',   # 6自由度机械臂关节1 (revolute)
-            'l_a2',   # 6自由度机械臂关节2 (revolute)
-            'l_a3',   # 6自由度机械臂关节3 (revolute)
-            'l_a4',   # 6自由度机械臂关节4 (revolute)
-            'l_a5',   # 6自由度机械臂关节5 (revolute)
-            'l_a6'    # 6自由度机械臂关节6 (revolute)
+            'w_r', 'w_l', 'l_1', 'l_2', 'l_3', 'l_4', 'cm3_l', 'l_a1', 
+            'l_a2', 'l_a3', 'l_a4', 'l_a5', 'l_a6', 'l_at', 'cm2_l', 
+            'radar_l', 'cm1_l', 'pw1_1', 'pw1_2', 'pw2_1', 'pw2_2', 
+            'pw3_1', 'pw3_2', 'pw4_1', 'pw4_2'
         ]
         
-        # 当前关节位置
+        # 完整的当前关节位置
         self.current_joint_positions = [0.0] * len(self.joint_names)
         
-        # 目标关节位置
-        self.target_joint_positions = [0.0] * len(self.joint_names)
+        # 记录上次发送给机械臂的命令
+        self.last_joint_command = [0.0] * 6
+        self.last_command_time = 0.0
         
-        # Body当前位置 [升降, 腰部旋转, 头部旋转, 头部俯仰]
-        self.current_body_positions = [0.0, 0.0, 0.0, 0.0]
-        
-        # Body控制状态
-        self.body_enabled = False
-        self.body_last_command_time = 0
-        self.body_command_interval = 0.5  # Body命令最小间隔(秒)
-        
-        # 机械臂控制状态
-        self.last_arm_command_time = 0
-        self.arm_command_interval = 0.1  # 机械臂命令最小间隔(秒)
-        self.last_arm_positions = [0.0] * 6  # 上次发送给机械臂的关节位置
-        
-        # 创建定时器，以10Hz频率发布关节状态
-        self.control_timer = self.create_timer(0.1, self.control_loop)
-        
-        # 创建定时器，以1Hz频率更新状态
-        self.status_timer = self.create_timer(1.0, self.status_update_loop)
-        
-        # 运动规划参数
-        self.motion_speed = 0.5  # 关节运动速度 (rad/s 或 m/s)
-        
-        # 自动控制参数
-        self.declare_parameter('auto_control_robot', True)  # 是否自动控制实际机器人
-        self.auto_control = self.get_parameter('auto_control_robot').value
-        
-        # 控制模式参数
-        self.declare_parameter('enable_interactive', False)
-        self.interactive_mode = self.get_parameter('enable_interactive').value
+        # 添加位置稳定性检查
+        self.position_history = []  # 存储最近几次的位置读取
+        self.stable_position = [0.0] * 6  # 稳定的位置
+        self.position_read_errors = 0  # 连续读取错误计数
         
         # 初始化机械臂连接
         self.init_arm_connection()
+        self.auto_enable_robot()
+
+        # 创建一个定时器，高频更新和发布关节状态
+        self.status_timer = self.create_timer(0.1, self.update_and_publish_status)
         
-        # 如果启用自动控制，尝试使能机器人
-        if self.auto_control and self.arm_connected:
-            self.auto_enable_robot()
-            # 测试Body连接并尝试使能
-            if self.test_body_connection():
-                self.auto_enable_body()
-            else:
-                self.get_logger().warn('Body系统连接失败，Body控制将被禁用')
-        
-        if self.interactive_mode:
-            self.get_logger().info('机械臂控制器已启动 - 交互模式')
-            # 在单独线程中启动交互控制
-            import threading
-            self.control_thread = threading.Thread(target=self.interactive_control_loop)
-            self.control_thread.daemon = True
-            self.control_thread.start()
-        else:
-            mode_info = "自动控制模式" if self.auto_control else "服务模式"
-            self.get_logger().info(f'机械臂控制器已启动 - {mode_info}')
-    
+        self.get_logger().info('机械臂控制器已启动 - MoveIt2接口模式 (带状态发布)')
+
     def init_arm_connection(self):
-        """初始化机械臂连接"""
         try:
             self.arm_robot = jkrc.RC(self.arm_ip)
             self.arm_robot.login()
@@ -166,562 +90,325 @@ class ArmController(Node):
             self.arm_connected = False
     
     def auto_enable_robot(self):
-        """自动使能机器人"""
+        if not self.arm_connected: return
         try:
-            if not self.arm_connected:
-                return
+            self.arm_robot.power_on()
+            time.sleep(0.5)
+            self.arm_robot.enable_robot()
             
+            # 停止任何正在进行的运动
+            try:
+                self.arm_robot.stop_move()
+                time.sleep(0.5)
+                self.get_logger().info('已停止机械臂运动')
+            except:
+                pass  # 如果没有运动在进行，这个命令可能会失败，忽略错误
+            
+            self.arm_enabled = True
+            self.get_logger().info('机器人已自动使能')
+        except Exception as e:
+            self.get_logger().warn(f'自动使能失败: {e}')
+    
+    def reconnect_and_enable(self):
+        """重新连接并使能机械臂"""
+        try:
+            # 清理现有连接
+            if self.arm_robot:
+                try:
+                    self.arm_robot.logout()
+                except:
+                    pass
+            
+            # 重新连接
+            self.arm_robot = jkrc.RC(self.arm_ip)
+            self.arm_robot.login()
+            self.arm_connected = True
+            
+            # 重新使能
             self.arm_robot.power_on()
             time.sleep(0.5)
             self.arm_robot.enable_robot()
             self.arm_enabled = True
-            self.get_logger().info('机器人已自动使能，准备接收控制命令')
-        except Exception as e:
-            self.get_logger().warn(f'自动使能失败: {e}，请手动使能机器人')
-    
-    def auto_enable_body(self):
-        """自动使能Body"""
-        try:
-            # 先复位Body
-            reset_response = requests.post(self.body_urls['reset'], json={}, timeout=3)
-            if reset_response.status_code == 200:
-                self.get_logger().info('Body系统已复位')
             
-            time.sleep(0.5)
+            self.get_logger().info('机械臂重新连接并使能成功')
             
-            # 使能Body
-            enable_data = {"enable": 1}
-            enable_response = requests.post(self.body_urls['enable'], json=enable_data, timeout=3)
-            
-            if enable_response.status_code == 200:
-                self.body_enabled = True
-                self.get_logger().info('Body系统已自动使能')
-            else:
-                self.get_logger().warn(f'Body自动使能失败: HTTP {enable_response.status_code}')
-                
         except Exception as e:
-            self.get_logger().warn(f'Body自动使能失败: {e}')
-    
-    def test_body_connection(self):
-        """测试Body连接"""
-        try:
-            response = requests.get(self.body_urls['sysinfo'], timeout=2)
-            if response.status_code == 200:
-                self.get_logger().info('Body系统连接正常')
-                return True
-            else:
-                self.get_logger().warn(f'Body系统响应异常: HTTP {response.status_code}')
-                return False
-        except Exception as e:
-            self.get_logger().error(f'Body系统连接失败: {e}')
-            return False
+            self.get_logger().error(f'机械臂重新连接失败: {e}')
+            self.arm_connected = False
+            self.arm_enabled = False
     
     def arm_enable_callback(self, request, response):
-        """机械臂使能/禁用服务回调"""
+        response.success = True
+        return response
+
+    def execute_trajectory_callback(self, msg):
+        if not self.arm_enabled:
+            self.get_logger().warn("机械臂未使能，忽略轨迹命令")
+            return
+
+        self.get_logger().info(f"收到新的轨迹，包含 {len(msg.points)} 个路径点")
+        # 简单的轨迹执行：直接运动到最后一个点
+        if msg.points:
+            final_point = msg.points[-1]
+            arm_joint_names = [name for name in msg.joint_names if name.startswith('l_a')]
+            
+            if len(arm_joint_names) == 6:
+                try:
+                    target_positions = final_point.positions
+                    self.get_logger().info(f"正在移动到目标关节位置: {target_positions}")
+                    self.arm_robot.joint_move(list(target_positions), 0, True, 1.0) # 阻塞模式
+                except Exception as e:
+                    self.get_logger().error(f"机械臂运动失败: {e}")
+            else:
+                self.get_logger().error("轨迹中的关节数量不是6个！")
+        self.get_logger().info("轨迹执行完成")
+
+    def update_and_publish_status(self):
+        """获取机器人状态并发布 /joint_states"""
+        if self.arm_connected and self.arm_enabled:
+            # 使用改进的关节位置获取方法，带重试机制
+            arm_positions = self.get_current_joint_positions()
+            
+            # 转换实际机器人角度到URDF坐标系角度
+            urdf_positions = self.convert_robot_to_urdf_angles(arm_positions)
+            
+            # 更新完整关节列表中的对应部分
+            # 假设l_a1到l_a6在self.joint_names中的索引是7到12
+            for i in range(6):
+                self.current_joint_positions[7 + i] = urdf_positions[i]
+
+        # 发布完整的关节状态
+        joint_state_msg = JointState()
+        joint_state_msg.header = Header()
+        joint_state_msg.header.stamp = self.get_clock().now().to_msg()
+        joint_state_msg.name = self.joint_names
+        joint_state_msg.position = self.current_joint_positions
+        self.joint_publisher.publish(joint_state_msg)
+    
+    def get_current_joint_positions(self):
+        """获取当前关节位置，带重试和错误处理以及稳定性过滤"""
+        if not self.arm_connected or not self.arm_enabled:
+            self.get_logger().warn('机械臂未连接或未使能，返回默认位置')
+            return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                ret = self.arm_robot.get_joint_position()
+                
+                # 详细日志记录
+                self.get_logger().debug(f'尝试 {attempt + 1}: get_joint_position() 返回: {ret}')
+                
+                # 检查返回值格式
+                if ret is None:
+                    self.get_logger().warn(f'尝试 {attempt + 1}: get_joint_position() 返回 None')
+                elif isinstance(ret, (list, tuple)) and len(ret) >= 2:
+                    # JAKA API 通常返回 (error_code, joint_positions) 格式
+                    error_code = ret[0]
+                    if error_code == 0 and len(ret[1]) == 6:
+                        # 成功获取关节位置，应用稳定性过滤
+                        current_pos = list(ret[1])
+                        return self._apply_position_stability_filter(current_pos)
+                    else:
+                        self.get_logger().warn(f'尝试 {attempt + 1}: API错误码: {error_code}, 数据: {ret[1] if len(ret) > 1 else "无数据"}')
+                else:
+                    self.get_logger().warn(f'尝试 {attempt + 1}: 意外的返回格式: {ret}')
+                
+                # 如果不是最后一次尝试，短暂等待后重试
+                if attempt < max_retries - 1:
+                    time.sleep(0.1)
+                    
+            except Exception as e:
+                self.get_logger().warn(f'尝试 {attempt + 1}: 获取关节位置异常: {e}')
+                if attempt < max_retries - 1:
+                    time.sleep(0.1)
+        
+        # 所有重试都失败，尝试重新连接
+        self.get_logger().error('所有重试失败，尝试重新连接机械臂')
+        self.reconnect_and_enable()
+        
+        # 如果有稳定的历史位置，返回它
+        if self.stable_position is not None:
+            return self.stable_position
+        return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+    def convert_robot_to_urdf_angles(self, robot_angles):
+        """
+        将实际机器人的关节角度转换为URDF坐标系中的角度
+        
+        根据URDF中每个关节的rpy偏移，需要进行相应的角度调整：
+        - l_a1: rpy="3.1416 1.5708 0" (180°绕X轴 + 90°绕Y轴)
+        - l_a2: rpy="1.5708 -1.5708 0" (90°绕X轴 - 90°绕Y轴) 
+        - l_a3: rpy="0 0 0" (无偏移)
+        - l_a4: rpy="-1.5708 0 -1.5708" (-90°绕X轴 - 90°绕Z轴)
+        - l_a5: rpy="-1.5708 1.5708 0" (-90°绕X轴 + 90°绕Y轴)
+        - l_a6: rpy="1.5708 0 -1.5708" (90°绕X轴 - 90°绕Z轴)
+        """
+        if len(robot_angles) != 6:
+            self.get_logger().error(f"期望6个关节角度，但收到{len(robot_angles)}个")
+            return [0.0] * 6
+        
+        urdf_angles = [0.0] * 6
+        
+        # 基于URDF中的rpy偏移调整关节角度
+        # 这些偏移量根据URDF定义计算得出
+        
+        # l_a1: 有180°和90°的旋转偏移，可能需要反向旋转
+        urdf_angles[0] = robot_angles[0]  # 先尝试反向
+        
+        # l_a2: 有90°偏移组合
+        urdf_angles[1] = robot_angles[1]  # 先保持原值，稍后根据测试调整
+        
+        # l_a3: 无偏移，保持原值
+        urdf_angles[2] = robot_angles[2]
+        
+        # l_a4: 有-90°和-90°的偏移
+        urdf_angles[3] = robot_angles[3] - math.pi   # 先尝试反向
+        
+        # l_a5: 有-90°和90°的偏移
+        urdf_angles[4] = robot_angles[4]  # 先保持原值
+        
+        # l_a6: 有90°和-90°的偏移
+        urdf_angles[5] = robot_angles[5]  # 先尝试反向
+        
+        self.get_logger().debug(f"关节角度转换: 机器人 {[f'{j:.3f}' for j in robot_angles]} -> URDF {[f'{j:.3f}' for j in urdf_angles]}")
+        return urdf_angles
+
+    def convert_urdf_to_robot_angles(self, urdf_angles):
+        """
+        将URDF坐标系中的角度转换为实际机器人的关节角度
+        这是convert_robot_to_urdf_angles的逆变换
+        """
+        if len(urdf_angles) != 6:
+            self.get_logger().error(f"期望6个关节角度，但收到{len(urdf_angles)}个")
+            return [0.0] * 6
+        
+        robot_angles = [0.0] * 6
+        
+        # 应用与convert_robot_to_urdf_angles相反的变换
+        robot_angles[0] = urdf_angles[0]  # l_a1反向
+        robot_angles[1] = urdf_angles[1]   # l_a2保持
+        robot_angles[2] = urdf_angles[2]   # l_a3保持 
+        robot_angles[3] = urdf_angles[3] + math.pi  # l_a4反向
+        robot_angles[4] = urdf_angles[4]   # l_a5保持
+        robot_angles[5] = urdf_angles[5]  # l_a6反向
+        
+        self.get_logger().debug(f"关节角度逆转换: URDF {[f'{j:.3f}' for j in urdf_angles]} -> 机器人 {[f'{j:.3f}' for j in robot_angles]}")
+        return robot_angles
+
+    def _apply_position_stability_filter(self, current_pos):
+        """应用位置稳定性过滤"""
+        import numpy as np
+        
+        # 添加到历史记录
+        self.position_history.append(current_pos.copy())
+        if len(self.position_history) > 5:
+            self.position_history.pop(0)
+        
+        # 如果历史记录足够，检查位置稳定性
+        if len(self.position_history) >= 3:
+            # 计算最近几次读取的方差
+            pos_array = np.array(self.position_history[-3:])
+            variance = np.var(pos_array, axis=0)
+            max_variance = np.max(variance)
+            
+            # 如果方差小于阈值，认为位置稳定
+            if max_variance < 0.01:  # 0.01弧度约等于0.57度
+                self.stable_position = current_pos.copy()
+                self.position_read_errors = 0
+                self.get_logger().debug(f'位置稳定，方差: {max_variance:.4f}')
+                return current_pos
+            else:
+                self.position_read_errors += 1
+                self.get_logger().warn(f'位置不稳定，方差: {max_variance:.4f}，错误计数: {self.position_read_errors}')
+                
+                # 如果连续多次不稳定，但有历史稳定位置，返回稳定位置
+                if self.position_read_errors > 3 and self.stable_position is not None:
+                    self.get_logger().warn(f'连续{self.position_read_errors}次位置不稳定，使用历史稳定位置')
+                    return self.stable_position
+                else:
+                    # 位置不稳定但错误次数不多，返回当前位置
+                    return current_pos
+        else:
+            # 历史记录不足，直接返回当前位置
+            self.get_logger().debug(f'位置历史记录不足({len(self.position_history)}/3)，直接返回当前位置')
+            return current_pos
+
+    def reconnect_and_enable(self):
+        """重新连接并启用机械臂"""
         try:
-            if not self.arm_connected:
-                self.init_arm_connection()
+            self.get_logger().warn('尝试重新连接机械臂...')
             
-            if not self.arm_connected:
-                response.success = False
-                response.message = "机械臂未连接"
-                return response
+            # 重置状态
+            self.arm_connected = False
+            self.arm_enabled = False
+            self.position_history.clear()
+            self.stable_position = None
+            self.position_read_errors = 0
             
-            if request.data:  # 使能
-                self.arm_robot.power_on()
-                time.sleep(0.5)
-                self.arm_robot.enable_robot()
-                self.arm_enabled = True
-                response.message = "机械臂已使能"
-            else:  # 禁用
-                self.arm_robot.disable_robot()
-                time.sleep(0.5) 
-                self.arm_robot.power_off()
-                self.arm_enabled = False
-                response.message = "机械臂已禁用"
+            # 重新连接
+            time.sleep(1.0)  # 等待一下再重连
+            self.arm_robot.login_in(self.robot_ip)
+            self.arm_connected = True
             
-            response.success = True
-            self.get_logger().info(response.message)
+            # 重新启用
+            self.auto_enable_robot()
+            
+            self.get_logger().info('机械臂重新连接成功')
             
         except Exception as e:
-            response.success = False
-            response.message = f"机械臂操作失败: {e}"
-            self.get_logger().error(response.message)
-        
-        return response
+            self.get_logger().error(f'重新连接失败: {e}')
+            self.arm_connected = False
+            self.arm_enabled = False
     
-    def joint_state_callback(self, msg):
-        """接收来自arm_pose_calculator的关节状态"""
-        if len(msg.position) == len(self.joint_names):
-            self.current_joint_positions = list(msg.position)
-            self.target_joint_positions = list(msg.position)  # 更新目标位置
-            
-            # 发布关节状态给RViz等工具
-            # self.publish_joint_states()
-            
-            # 如果启用自动控制，立即更新Body部分（升降、旋转等）
-            if self.auto_control:
-                self.update_body_immediately(self.current_joint_positions)
-    
-    # def publish_joint_states(self):
-    #     """发布当前关节状态给RViz等工具"""
-    #     joint_state = JointState()
-    #     joint_state.header = Header()
-    #     joint_state.header.stamp = self.get_clock().now().to_msg()
-    #     joint_state.header.frame_id = ''
-        
-    #     joint_state.name = self.joint_names
-    #     joint_state.position = self.current_joint_positions
-    #     joint_state.velocity = [0.0] * len(self.joint_names)
-    #     joint_state.effort = [0.0] * len(self.joint_names)
-        
-    #     self.joint_publisher.publish(joint_state)
-    
-    def arm_joint_callback(self, msg):
-        """接收机械臂关节控制命令"""
+    def joint_command_callback(self, msg):
+        """接收来自trajectory_controller的关节命令"""
         if not self.arm_enabled:
             self.get_logger().warn("机械臂未使能，忽略关节命令")
             return
         
         if len(msg.data) != 6:
-            self.get_logger().error("机械臂关节命令必须包含6个关节角度")
+            self.get_logger().error("关节命令必须包含6个关节角度")
+            return
+        
+        # 检查是否与上次命令相同，避免重复执行
+        urdf_joint_positions = list(msg.data)
+        current_time = time.time()
+        
+        # 将URDF坐标系的角度转换为实际机器人的角度
+        robot_joint_positions = self.convert_urdf_to_robot_angles(urdf_joint_positions)
+        
+        # 计算与上次命令的差异
+        max_diff = max(abs(robot_joint_positions[i] - self.last_joint_command[i]) for i in range(6))
+        
+        # 如果变化很小且时间间隔很短，跳过这次命令
+        if max_diff < 0.01 and (current_time - self.last_command_time) < 0.3:
             return
         
         try:
-            # 运动模式：ABS = 0（绝对位置）
-            joint_positions = list(msg.data).reverse()
-            self.arm_robot.joint_move(joint_positions, 0, True, 1.0)
-            self.get_logger().info(f'机械臂关节运动命令: {[f"{j:.3f}" for j in joint_positions]}')
+            # 发送关节角度给实际机器人
+            self.arm_robot.joint_move(robot_joint_positions, 0, False, 0.8)  # 非阻塞模式，速度0.8
+            self.get_logger().info(f'执行关节命令 (URDF): {[f"{j:.3f}" for j in urdf_joint_positions]}')
+            self.get_logger().info(f'执行关节命令 (机器人): {[f"{j:.3f}" for j in robot_joint_positions]}')
+            
+            # 更新当前关节位置（6DOF机械臂部分）- 使用URDF角度
+            self.current_joint_positions[7:13] = urdf_joint_positions  # l_a1到l_a6的位置
+            
+            # 记录这次命令 - 使用机器人角度
+            self.last_joint_command = robot_joint_positions.copy()
+            self.last_command_time = current_time
+            
         except Exception as e:
             self.get_logger().error(f'机械臂关节运动失败: {e}')
-    
-    def body_enable_callback(self, request, response):
-        """Body使能/禁用服务回调"""
-        try:
-            if request.data:
-                # 先复位再使能
-                reset_response = requests.post(self.body_urls['reset'], json={}, timeout=3)
-                time.sleep(0.2)
-            
-            enable_data = {"enable": 1 if request.data else 0}
-            response_req = requests.post(self.body_urls['enable'], json=enable_data, timeout=3)
-            
-            if response_req.status_code == 200:
-                self.body_enabled = request.data
-                response.success = True
-                response.message = f"Body{'已使能' if request.data else '已禁用'}"
-                self.get_logger().info(response.message)
-            else:
-                response.success = False
-                response.message = f"Body操作失败: HTTP {response_req.status_code}"
-                self.get_logger().error(response.message)
-                
-        except Exception as e:
-            response.success = False
-            response.message = f"Body操作失败: {e}"
-            self.get_logger().error(response.message)
-        
-        return response
-    
-    def body_command_callback(self, msg):
-        """接收Body控制命令 [升降, 腰部旋转, 头部旋转, 头部俯仰]"""
-        if len(msg.data) != 4:
-            self.get_logger().error("Body命令必须包含4个值: [升降, 腰部旋转, 头部旋转, 头部俯仰]")
-            return
-        
-        try:
-            # 限制范围
-            lift = max(0, min(300, msg.data[0]))      # 升降范围[0,300]mm
-            waist = max(-140, min(140, msg.data[1]))  # 腰部旋转[-140,140]度
-            head_yaw = max(-180, min(180, msg.data[2]))  # 头部旋转[-180,180]度
-            head_pitch = max(-5, min(35, msg.data[3]))   # 头部俯仰[-5,35]度
-            
-            move_data = {
-                "pos": [lift, waist, head_yaw, head_pitch],
-                "vel": 100,
-                "acc": 100
-            }
-            
-            response = requests.post(self.body_urls['moveto'], json=move_data, timeout=5)
-            
-            if response.status_code == 200:
-                self.get_logger().info(f'Body运动命令: 升降={lift}, 腰部={waist}, 头部yaw={head_yaw}, 头部pitch={head_pitch}')
-            else:
-                self.get_logger().error(f'Body运动失败: HTTP {response.status_code}')
-                
-        except Exception as e:
-            self.get_logger().error(f'Body运动失败: {e}')
-    
-    def status_update_loop(self):
-        """状态更新循环"""
-        # 发布机械臂状态
-        arm_status = Bool()
-        arm_status.data = self.arm_enabled
-        self.arm_status_publisher.publish(arm_status)
-        
-        # 获取并发布Body状态
-        try:
-            response = requests.get(self.body_urls['status'], timeout=2)
-            if response.status_code == 200:
-                status_data = json.loads(response.text)
-                if len(status_data) >= 4:
-                    body_status = Float64MultiArray()
-                    body_status.data = [
-                        float(status_data[0].get('pos', 0)),  # 升降
-                        float(status_data[1].get('pos', 0)),  # 腰部旋转
-                        float(status_data[2].get('pos', 0)),  # 头部旋转
-                        float(status_data[3].get('pos', 0))   # 头部俯仰
-                    ]
-                    self.current_body_positions = body_status.data
-                    self.body_status_publisher.publish(body_status)
-        except Exception as e:
-            if hasattr(self, '_last_body_error_time'):
-                if time.time() - self._last_body_error_time > 10:  # 每10秒记录一次错误
-                    self.get_logger().warn(f'获取Body状态失败: {e}')
-                    self._last_body_error_time = time.time()
-            else:
-                self._last_body_error_time = time.time()
-    
-    def interactive_control_loop(self):
-        """交互式控制循环"""
-        time.sleep(2)  # 等待系统初始化
-        self.print_interactive_help()
-        
-        while rclpy.ok():
-            try:
-                command = input("\n请输入命令 (help获取帮助): ").strip().split()
-                if not command:
-                    continue
-                
-                cmd = command[0].lower()
-                
-                if cmd == 'quit' or cmd == 'exit':
-                    self.get_logger().info('退出交互模式...')
-                    break
-                elif cmd == 'help':
-                    self.print_interactive_help()
-                elif cmd == 'arm_enable':
-                    self.interactive_enable_arm(True)
-                elif cmd == 'arm_disable':
-                    self.interactive_enable_arm(False)
-                elif cmd == 'body_enable':
-                    self.interactive_enable_body(True)
-                elif cmd == 'body_disable':
-                    self.interactive_enable_body(False)
-                elif cmd == 'arm':
-                    if len(command) == 7:
-                        self.interactive_arm_move(command[1:])
-                    else:
-                        print('错误: arm命令需要6个关节角度')
-                elif cmd == 'body':
-                    if len(command) == 5:
-                        self.interactive_body_move(command[1:])
-                    else:
-                        print('错误: body命令需要4个位置值')
-                elif cmd == 'preset':
-                    if len(command) == 2:
-                        self.interactive_preset(command[1])
-                    else:
-                        print('错误: preset命令需要指定预设类型')
-                elif cmd == 'status':
-                    self.interactive_show_status()
-                else:
-                    print(f'错误: 未知命令 {cmd}，输入help获取帮助')
-                    
-            except KeyboardInterrupt:
-                print("\n收到中断信号，退出交互模式...")
-                break
-            except EOFError:
-                print("\n输入结束，退出交互模式...")
-                break
-            except Exception as e:
-                print(f'错误: {e}')
-    
-    def print_interactive_help(self):
-        """打印交互模式帮助信息"""
-        print("\n=== 机械臂控制器 - 交互模式 ===")
-        print("命令格式:")
-        print("  arm_enable     - 使能机械臂")
-        print("  arm_disable    - 禁用机械臂")
-        print("  body_enable    - 使能Body")
-        print("  body_disable   - 禁用Body")
-        print("  arm j1 j2 j3 j4 j5 j6  - 机械臂关节运动 (弧度)")
-        print("  body lift waist head_yaw head_pitch  - Body运动")
-        print("    lift: [0,300]mm, waist: [-140,140]°")
-        print("    head_yaw: [-180,180]°, head_pitch: [-5,35]°")
-        print("  preset arm_home  - 机械臂回到初始位置")
-        print("  preset body_home - Body回到初始位置")
-        print("  status         - 显示当前状态")
-        print("  help           - 显示此帮助")
-        print("  quit/exit      - 退出交互模式")
-        print("============================")
-        print("注意: 交互模式下ROS2话题和服务仍然正常工作")
-    
-    def interactive_enable_arm(self, enable):
-        """交互模式：使能/禁用机械臂"""
-        try:
-            if not self.arm_connected:
-                self.init_arm_connection()
-            
-            if not self.arm_connected:
-                print("错误: 机械臂未连接")
-                return
-            
-            if enable:
-                self.arm_robot.power_on()
-                time.sleep(0.5)
-                self.arm_robot.enable_robot()
-                self.arm_enabled = True
-                print("✓ 机械臂已使能")
-            else:
-                self.arm_robot.disable_robot()
-                time.sleep(0.5)
-                self.arm_robot.power_off()
-                self.arm_enabled = False
-                print("✓ 机械臂已禁用")
-                
-        except Exception as e:
-            print(f"错误: 机械臂操作失败 - {e}")
-    
-    def interactive_enable_body(self, enable):
-        """交互模式：使能/禁用Body"""
-        try:
-            enable_data = {"enable": 1 if enable else 0}
-            response = requests.post(self.body_urls['enable'], json=enable_data, timeout=5)
-            
-            if response.status_code == 200:
-                print(f"✓ Body{'已使能' if enable else '已禁用'}")
-            else:
-                print(f"错误: Body操作失败 - HTTP {response.status_code}")
-                
-        except Exception as e:
-            print(f"错误: Body操作失败 - {e}")
-    
-    def interactive_arm_move(self, joint_angles):
-        """交互模式：机械臂关节运动"""
-        if not self.arm_enabled:
-            print("错误: 机械臂未使能")
-            return
-        
-        try:
-            angles = [float(a) for a in joint_angles]
-            self.arm_robot.joint_move(angles, 0, True, 1.0)
-            print(f"✓ 机械臂运动命令已发送: {[f'{j:.3f}' for j in angles]}")
-        except ValueError:
-            print("错误: 关节角度必须是数字")
-        except Exception as e:
-            print(f"错误: 机械臂运动失败 - {e}")
-    
-    def interactive_body_move(self, positions):
-        """交互模式：Body运动"""
-        try:
-            pos = [float(p) for p in positions]
-            
-            # 检查范围
-            lift = max(0, min(300, pos[0]))
-            waist = max(-140, min(140, pos[1]))
-            head_yaw = max(-180, min(180, pos[2]))
-            head_pitch = max(-5, min(35, pos[3]))
-            
-            if pos[0] != lift or pos[1] != waist or pos[2] != head_yaw or pos[3] != head_pitch:
-                print("警告: 部分值超出范围，已自动限制")
-            
-            move_data = {
-                "pos": [lift, waist, head_yaw, head_pitch],
-                "vel": 100,
-                "acc": 100
-            }
-            
-            response = requests.post(self.body_urls['moveto'], json=move_data, timeout=5)
-            
-            if response.status_code == 200:
-                print(f"✓ Body运动命令已发送: 升降={lift}, 腰部={waist}, 头部yaw={head_yaw}, 头部pitch={head_pitch}")
-            else:
-                print(f"错误: Body运动失败 - HTTP {response.status_code}")
-                
-        except ValueError:
-            print("错误: 位置值必须是数字")
-        except Exception as e:
-            print(f"错误: Body运动失败 - {e}")
-    
-    def interactive_preset(self, preset_type):
-        """交互模式：预设动作"""
-        if preset_type == 'arm_home':
-            if not self.arm_enabled:
-                print("错误: 机械臂未使能")
-                return
-            
-            try:
-                joint_home = [-math.pi/2.0, math.pi/2.0, 0, 0, 0, 0]
-                self.arm_robot.joint_move(joint_home, 0, True, 1.0)
-                print("✓ 机械臂回到初始位置")
-            except Exception as e:
-                print(f"错误: 机械臂回初始位置失败 - {e}")
-                
-        elif preset_type == 'body_home':
-            try:
-                move_data = {
-                    "pos": [100, 0, 0, 0],
-                    "vel": 100,
-                    "acc": 100
-                }
-                response = requests.post(self.body_urls['moveto'], json=move_data, timeout=5)
-                
-                if response.status_code == 200:
-                    print("✓ Body回到初始位置")
-                else:
-                    print(f"错误: Body回初始位置失败 - HTTP {response.status_code}")
-            except Exception as e:
-                print(f"错误: Body回初始位置失败 - {e}")
-        else:
-            print(f"错误: 未知预设 {preset_type}")
-    
-    def interactive_show_status(self):
-        """交互模式：显示状态"""
-        print(f"\n=== 当前状态 ===")
-        print(f"机械臂连接: {'✓' if self.arm_connected else '✗'}")
-        print(f"机械臂使能: {'✓' if self.arm_enabled else '✗'}")
-        print(f"Body状态: {self.current_body_positions}")
-        print(f"机械臂关节: {[f'{j:.3f}' for j in self.current_joint_positions]}")
-        print("================\n")
-    
-    def update_body_immediately(self, joint_positions):
-        """立即更新Body部分的位置"""
-        # 检查Body是否使能
-        if not self.body_enabled:
-            self.get_logger().debug('Body未使能，跳过Body控制')
-            return
-        
-        # 限制调用频率，避免频繁发送命令
-        current_time = time.time()
-        if current_time - self.body_last_command_time < self.body_command_interval:
-            return
-        
-        try:
-            # 提取Body相关的关节 (l_1升降, l_2底座旋转)
-            lift_position = joint_positions[0] * 1000  # 转换为mm
-            waist_rotation = math.degrees(joint_positions[1])  # 转换为度
-            
-            # 限制范围
-            lift = max(0, min(300, lift_position))
-            waist = max(-140, min(140, waist_rotation))
-            
-            # 检查变化量，避免微小变化导致的频繁调用
-            lift_change = abs(lift - self.current_body_positions[0])
-            waist_change = abs(waist - self.current_body_positions[1])
-            
-            if lift_change < 5 and waist_change < 2:  # 升降<5mm, 旋转<2度则跳过
-                return
-            
-            # 发送Body控制命令，使用较短的超时和较慢的速度
-            move_data = {
-                "pos": [lift, waist, 0, 0],  # 头部保持中性
-                "vel": 50,   # 较慢的速度，避免过快运动
-                "acc": 50
-            }
-            
-            response = requests.post(self.body_urls['moveto'], json=move_data, timeout=3)
-            if response.status_code == 200:
-                self.body_last_command_time = current_time
-                self.get_logger().info(f'Body位置更新: 升降={lift:.1f}mm, 腰部旋转={waist:.1f}°')
-            else:
-                self.get_logger().warn(f'Body位置更新失败: HTTP {response.status_code}')
-            
-        except requests.exceptions.Timeout:
-            self.get_logger().warn('Body控制超时，可能Body系统响应慢')
-        except requests.exceptions.ConnectionError:
-            self.get_logger().warn('Body连接失败，检查网络连接到192.168.10.90:5000')
-            self.body_enabled = False  # 标记为未使能，需要重新使能
-        except Exception as e:
-            self.get_logger().warn(f'Body位置更新失败: {e}')
-    
-    def control_loop(self):
-        """控制循环，主要负责实际机器人控制"""
-        # 如果启用自动控制且机械臂使能，控制实际机器人
-        if self.auto_control and self.arm_enabled:
-            self.control_real_robot()
-    
-    def control_real_robot(self):
-        """控制实际机器人，使其与关节状态一致"""
-        try:
-            if not self.arm_connected or not self.arm_enabled:
-                return
-            
-            # 限制调用频率，避免频繁发送命令
-            current_time = time.time()
-            if current_time - self.last_arm_command_time < self.arm_command_interval:
-                return
-            
-            # 提取6DOF机械臂关节角度 (l_a1 到 l_a6)
-            if len(self.current_joint_positions) >= 10:
-                arm_joints = self.current_joint_positions[4:10]  # 索引4-9对应l_a1到l_a6
-                
-                # 检查关节角度是否有效
-                if len(arm_joints) == 6:
-                    # 检查与上次位置的差异，避免发送相同的命令
-                    max_change = max(abs(arm_joints[i] - self.last_arm_positions[i]) for i in range(6))
-                    
-                    if max_change > 0.01:  # 只有变化超过阈值才发送命令
-                        # 发送关节角度给实际机器人
-                        self.arm_robot.joint_move(arm_joints, 0, False, 0.8)  # 非阻塞模式，速度0.8
-                        self.last_arm_positions = arm_joints.copy()
-                        self.last_arm_command_time = current_time
-                        self.get_logger().debug(f'实际机器人关节控制: {[f"{j:.3f}" for j in arm_joints]}')
-                
-        except Exception as e:
-            self.get_logger().error(f'控制实际机器人失败: {e}')
-    
-    def control_body_from_joints(self):
-        """根据关节状态控制Body部分"""
-        try:
-            # 从关节状态中提取Body控制信息
-            lift_position = self.current_joint_positions[0] * 1000  # l_1转换为mm
-            waist_rotation = math.degrees(self.current_joint_positions[1])  # l_2转换为度
-            head_rotation = math.degrees(self.current_joint_positions[3])   # l_4转换为度
-            
-            # 限制范围
-            lift = max(0, min(300, lift_position))
-            waist = max(-140, min(140, waist_rotation))
-            head_yaw = max(-180, min(180, head_rotation))
-            head_pitch = 0  # 头部俯仰保持中性
-            
-            # 发送Body控制命令
-            move_data = {
-                "pos": [lift, waist, head_yaw, head_pitch],
-                "vel": 50,   # 较慢的速度
-                "acc": 50
-            }
-            
-            response = requests.post(self.body_urls['moveto'], json=move_data, timeout=2)
-            if response.status_code == 200:
-                self.get_logger().debug(f'Body同步控制: 升降={lift:.1f}, 腰部={waist:.1f}°')
-            
-        except Exception as e:
-            self.get_logger().debug(f'Body同步控制失败: {e}')
-    
-    def cleanup(self):
-        """清理资源"""
-        try:
-            if self.arm_connected and self.arm_robot:
-                if self.arm_enabled:
-                    self.arm_robot.disable_robot()
-                    self.arm_robot.power_off()
-                self.arm_robot.logout()
-                self.get_logger().info('机械臂连接已断开')
-        except Exception as e:
-            self.get_logger().error(f'机械臂断开失败: {e}')
 
 def main(args=None):
     rclpy.init(args=args)
-    
     node = ArmController()
-    
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
-        node.get_logger().info('收到中断信号，正在关闭...')
+        pass
     finally:
-        node.cleanup()
         node.destroy_node()
         rclpy.shutdown()
 
