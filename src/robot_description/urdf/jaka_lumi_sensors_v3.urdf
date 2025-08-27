@@ -33,7 +33,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/base_link.STL" />
+          filename="package://robot_description/meshes/base_link.STL" />
       </geometry>
       <material
         name="">
@@ -47,7 +47,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/base_link.STL" />
+          filename="package://robot_description/meshes/base_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -73,7 +73,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/wheel_r.STL" />
+          filename="package://robot_description/meshes/wheel_r.STL" />
       </geometry>
       <material
         name="">
@@ -87,7 +87,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/wheel_r.STL" />
+          filename="package://robot_description/meshes/wheel_r.STL" />
       </geometry>
     </collision>
   </link>
@@ -126,7 +126,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/wheel_l.STL" />
+          filename="package://robot_description/meshes/wheel_l.STL" />
       </geometry>
       <material
         name="">
@@ -140,7 +140,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/wheel_l.STL" />
+          filename="package://robot_description/meshes/wheel_l.STL" />
       </geometry>
     </collision>
   </link>
@@ -179,7 +179,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/link_1.STL" />
+          filename="package://robot_description/meshes/link_1.STL" />
       </geometry>
       <material
         name="">
@@ -193,7 +193,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/link_1.STL" />
+          filename="package://robot_description/meshes/link_1.STL" />
       </geometry>
     </collision>
   </link>
@@ -237,7 +237,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/link_2.STL" />
+          filename="package://robot_description/meshes/link_2.STL" />
       </geometry>
       <material
         name="">
@@ -251,7 +251,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/link_2.STL" />
+          filename="package://robot_description/meshes/link_2.STL" />
       </geometry>
     </collision>
   </link>
@@ -295,7 +295,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/link_3.STL" />
+          filename="package://robot_description/meshes/link_3.STL" />
       </geometry>
       <material
         name="">
@@ -309,7 +309,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/link_3.STL" />
+          filename="package://robot_description/meshes/link_3.STL" />
       </geometry>
     </collision>
   </link>
@@ -353,7 +353,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/link_4.STL" />
+          filename="package://robot_description/meshes/link_4.STL" />
       </geometry>
       <material
         name="">
@@ -367,7 +367,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/link_4.STL" />
+          filename="package://robot_description/meshes/link_4.STL" />
       </geometry>
     </collision>
   </link>
@@ -411,7 +411,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/Camera3_Link.STL" />
+          filename="package://robot_description/meshes/Camera3_Link.STL" />
       </geometry>
       <material
         name="">
@@ -425,7 +425,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/Camera3_Link.STL" />
+          filename="package://robot_description/meshes/Camera3_Link.STL" />
       </geometry>
     </collision>
   </link>
@@ -464,7 +464,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/link_a1.STL" />
+          filename="package://robot_description/meshes/link_a1.STL" />
       </geometry>
       <material
         name="">
@@ -478,7 +478,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/link_a1.STL" />
+          filename="package://robot_description/meshes/link_a1.STL" />
       </geometry>
     </collision>
   </link>
@@ -522,7 +522,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/link_a2.STL" />
+          filename="package://robot_description/meshes/link_a2.STL" />
       </geometry>
       <material
         name="">
@@ -536,7 +536,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/link_a2.STL" />
+          filename="package://robot_description/meshes/link_a2.STL" />
       </geometry>
     </collision>
   </link>
@@ -580,7 +580,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/link_a3.STL" />
+          filename="package://robot_description/meshes/link_a3.STL" />
       </geometry>
       <material
         name="">
@@ -594,7 +594,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/link_a3.STL" />
+          filename="package://robot_description/meshes/link_a3.STL" />
       </geometry>
     </collision>
   </link>
@@ -638,7 +638,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/link_a4.STL" />
+          filename="package://robot_description/meshes/link_a4.STL" />
       </geometry>
       <material
         name="">
@@ -652,7 +652,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/link_a4.STL" />
+          filename="package://robot_description/meshes/link_a4.STL" />
       </geometry>
     </collision>
   </link>
@@ -696,7 +696,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/link_a5.STL" />
+          filename="package://robot_description/meshes/link_a5.STL" />
       </geometry>
       <material
         name="">
@@ -710,7 +710,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/link_a5.STL" />
+          filename="package://robot_description/meshes/link_a5.STL" />
       </geometry>
     </collision>
   </link>
@@ -754,7 +754,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/link_a6.STL" />
+          filename="package://robot_description/meshes/link_a6.STL" />
       </geometry>
       <material
         name="">
@@ -768,7 +768,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/link_a6.STL" />
+          filename="package://robot_description/meshes/link_a6.STL" />
       </geometry>
     </collision>
   </link>
@@ -812,7 +812,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/link_at.STL" />
+          filename="package://robot_description/meshes/link_at.STL" />
       </geometry>
       <material
         name="">
@@ -826,7 +826,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/link_at.STL" />
+          filename="package://robot_description/meshes/link_at.STL" />
       </geometry>
     </collision>
   </link>
@@ -865,7 +865,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/Camera2_Link.STL" />
+          filename="package://robot_description/meshes/Camera2_Link.STL" />
       </geometry>
       <material
         name="">
@@ -879,7 +879,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/Camera2_Link.STL" />
+          filename="package://robot_description/meshes/Camera2_Link.STL" />
       </geometry>
     </collision>
   </link>
@@ -918,7 +918,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/Radar_Link.STL" />
+          filename="package://robot_description/meshes/Radar_Link.STL" />
       </geometry>
       <material
         name="">
@@ -932,7 +932,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/Radar_Link.STL" />
+          filename="package://robot_description/meshes/Radar_Link.STL" />
       </geometry>
     </collision>
   </link>
@@ -971,7 +971,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/Camera1_Link.STL" />
+          filename="package://robot_description/meshes/Camera1_Link.STL" />
       </geometry>
       <material
         name="">
@@ -985,7 +985,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/Camera1_Link.STL" />
+          filename="package://robot_description/meshes/Camera1_Link.STL" />
       </geometry>
     </collision>
   </link>
@@ -1024,7 +1024,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/pw1_Link1.STL" />
+          filename="package://robot_description/meshes/pw1_Link1.STL" />
       </geometry>
       <material
         name="">
@@ -1038,7 +1038,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/pw1_Link1.STL" />
+          filename="package://robot_description/meshes/pw1_Link1.STL" />
       </geometry>
     </collision>
   </link>
@@ -1077,7 +1077,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/pw1_Link2.STL" />
+          filename="package://robot_description/meshes/pw1_Link2.STL" />
       </geometry>
       <material
         name="">
@@ -1091,7 +1091,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/pw1_Link2.STL" />
+          filename="package://robot_description/meshes/pw1_Link2.STL" />
       </geometry>
     </collision>
   </link>
@@ -1130,7 +1130,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/pw2_Link1.STL" />
+          filename="package://robot_description/meshes/pw2_Link1.STL" />
       </geometry>
       <material
         name="">
@@ -1144,7 +1144,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/pw2_Link1.STL" />
+          filename="package://robot_description/meshes/pw2_Link1.STL" />
       </geometry>
     </collision>
   </link>
@@ -1183,7 +1183,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/pw2_Link2.STL" />
+          filename="package://robot_description/meshes/pw2_Link2.STL" />
       </geometry>
       <material
         name="">
@@ -1197,7 +1197,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/pw2_Link2.STL" />
+          filename="package://robot_description/meshes/pw2_Link2.STL" />
       </geometry>
     </collision>
   </link>
@@ -1236,7 +1236,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/pw3_Link1.STL" />
+          filename="package://robot_description/meshes/pw3_Link1.STL" />
       </geometry>
       <material
         name="">
@@ -1250,7 +1250,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/pw3_Link1.STL" />
+          filename="package://robot_description/meshes/pw3_Link1.STL" />
       </geometry>
     </collision>
   </link>
@@ -1289,7 +1289,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/pw3_Link2.STL" />
+          filename="package://robot_description/meshes/pw3_Link2.STL" />
       </geometry>
       <material
         name="">
@@ -1303,7 +1303,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/pw3_Link2.STL" />
+          filename="package://robot_description/meshes/pw3_Link2.STL" />
       </geometry>
     </collision>
   </link>
@@ -1342,7 +1342,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/pw4_Link1.STL" />
+          filename="package://robot_description/meshes/pw4_Link1.STL" />
       </geometry>
       <material
         name="">
@@ -1356,7 +1356,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/pw4_Link1.STL" />
+          filename="package://robot_description/meshes/pw4_Link1.STL" />
       </geometry>
     </collision>
   </link>
@@ -1395,7 +1395,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/pw4_Link2.STL" />
+          filename="package://robot_description/meshes/pw4_Link2.STL" />
       </geometry>
       <material
         name="">
@@ -1409,7 +1409,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://jaka_lumi_sensors_v3/meshes/pw4_Link2.STL" />
+          filename="package://robot_description/meshes/pw4_Link2.STL" />
       </geometry>
     </collision>
   </link>
