@@ -15,3 +15,7 @@
 **/.cache/
 **/data
 **/.marscode/
+**/log.txt
+**/logs/
+**/Log/
+
