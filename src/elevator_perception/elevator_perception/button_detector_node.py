@@ -25,7 +25,7 @@ class ButtonDetector(Node):
         # 订阅原始图像
         self.subscription = self.create_subscription(
             Image,
-            '/raw/image',
+            '/camera/color/image_raw',
             self.image_callback,
             10
         )
@@ -41,19 +41,55 @@ class ButtonDetector(Node):
         img = self.ros_img_to_cv2(msg)
         # YOLO 推理
         results = self.model(img)
-        # 绘制检测框
-        annotated_img = results[0].plot()
+        
+        # 绘制检测框并筛选高置信度结果
+        annotated_img = self.draw_filtered_results(results[0], img)
+        
         # 发布标注图像
         annotated_msg = self.cv2_to_ros_img(annotated_img, msg.header)
         self.image_publisher.publish(annotated_msg)
+        
         # 发布识别结果（文本）
         result_str = self.format_result(results)
         self.result_publisher.publish(String(data=result_str))
+
+    def draw_filtered_results(self, result, img):
+        """绘制置信度高于0.5的检测结果"""
+        import numpy as np
+        annotated_img = img.copy()
+        
+        if result.boxes is not None:
+            for box in result.boxes:
+                conf = float(box.conf)
+                # 只绘制置信度高于0.5的检测框
+                if conf > 0.5:
+                    cls = result.names[int(box.cls)] if hasattr(result, 'names') else str(int(box.cls))
+                    
+                    # 获取边界框坐标
+                    xyxy = box.xyxy[0].cpu().numpy()
+                    x1, y1, x2, y2 = int(xyxy[0]), int(xyxy[1]), int(xyxy[2]), int(xyxy[3])
+                    
+                    # 绘制边界框 (BGR格式: 绿色)
+                    cv2.rectangle(annotated_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    
+                    # 绘制标签和置信度
+                    label = f'{cls}: {conf:.2f}'
+                    label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)[0]
+                    # 标签背景 (BGR格式: 绿色)
+                    cv2.rectangle(annotated_img, (x1, y1 - label_size[1] - 10), 
+                                (x1 + label_size[0], y1), (0, 255, 0), -1)
+                    # 标签文字 (BGR格式: 黑色)
+                    cv2.putText(annotated_img, label, (x1, y1 - 5), 
+                              cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
+        
+        return annotated_img
 
     def ros_img_to_cv2(self, msg):
         import numpy as np
         if msg.encoding == 'rgb8':
             img = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width, 3)
+            # 将RGB转换为BGR (OpenCV格式)
+            img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
         elif msg.encoding == 'bgr8':
             img = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width, 3)
         else:
@@ -65,7 +101,11 @@ class ButtonDetector(Node):
         msg.header = header
         msg.height, msg.width = img.shape[:2]
         msg.encoding = 'bgr8'
-        msg.data = img.tobytes()
+        # 确保图像是BGR格式（OpenCV默认格式）
+        if len(img.shape) == 3 and img.shape[2] == 3:
+            msg.data = img.tobytes()
+        else:
+            raise ValueError(f'Unsupported image shape: {img.shape}')
         msg.step = msg.width * 3
         return msg
 
@@ -76,6 +116,10 @@ class ButtonDetector(Node):
         for box in res.boxes:
             cls = res.names[int(box.cls)] if hasattr(res, 'names') else str(int(box.cls))
             conf = float(box.conf)
+            
+            # 筛选置信度高于0.5的结果
+            if conf <= 0.5:
+                continue
             
             # 获取边界框坐标 (x1, y1, x2, y2)
             xyxy = box.xyxy[0].cpu().numpy()
