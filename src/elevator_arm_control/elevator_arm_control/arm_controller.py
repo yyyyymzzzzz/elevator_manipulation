@@ -2,8 +2,10 @@
 
 import rclpy
 from rclpy.node import Node
+from rclpy.action import ActionServer
 from sensor_msgs.msg import JointState
-from trajectory_msgs.msg import JointTrajectory
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+from control_msgs.action import FollowJointTrajectory
 from std_msgs.msg import Header, Float64MultiArray
 from std_srvs.srv import SetBool
 import math
@@ -24,6 +26,10 @@ class ArmController(Node):
         self.arm_connected = False
         self.arm_enabled = False
         
+        # Body控制配置
+        self.body_api_url = "http://192.168.10.90:5000/api/extaxis"
+        self.body_enabled = False
+        
         # 订阅由MoveIt2生成的轨迹
         self.trajectory_subscriber = self.create_subscription(
             JointTrajectory,
@@ -32,7 +38,15 @@ class ArmController(Node):
             10
         )
         
-        # **新增**: 订阅来自trajectory_controller的关节命令
+        # 订阅body控制器的轨迹
+        self.body_trajectory_subscriber = self.create_subscription(
+            JointTrajectory,
+            '/body_controller/joint_trajectory',
+            self.execute_body_trajectory_callback,
+            10
+        )
+        
+        # 订阅来自trajectory_controller的关节命令
         self.joint_command_subscriber = self.create_subscription(
             Float64MultiArray,
             '/arm/joint_command',
@@ -40,7 +54,7 @@ class ArmController(Node):
             10
         )
         
-        # **新增**: 发布最终关节状态 (给RViz和MoveIt使用)
+        # 发布最终关节状态 (给RViz和MoveIt使用)
         self.joint_publisher = self.create_publisher(JointState, '/joint_states', 10)
         
         # 服务：机械臂使能/禁用
@@ -73,6 +87,9 @@ class ArmController(Node):
         # 初始化机械臂连接
         self.init_arm_connection()
         self.auto_enable_robot()
+
+        # 初始化body控制
+        self.init_body_control()
 
         # 创建一个定时器，高频更新和发布关节状态
         self.status_timer = self.create_timer(0.1, self.update_and_publish_status)
@@ -108,6 +125,82 @@ class ArmController(Node):
             self.get_logger().info('机器人已自动使能')
         except Exception as e:
             self.get_logger().warn(f'自动使能失败: {e}')
+    
+    def init_body_control(self):
+        """初始化body控制"""
+        try:
+            # 先检查body服务是否可用
+            status_url = f"{self.body_api_url}/status"
+            response = requests.get(status_url, timeout=2)
+            if response.status_code == 200:
+                self.get_logger().info('Body服务连接成功')
+                
+                # 启用body控制
+                enable_url = f"{self.body_api_url}/enable"
+                response = requests.post(enable_url, json={"enable": 1}, timeout=10)
+                if response.status_code == 200:
+                    self.body_enabled = True
+                    self.get_logger().info('Body控制已启用')
+                else:
+                    self.get_logger().warn(f'Body启用失败: HTTP {response.status_code}')
+            else:
+                self.get_logger().warn(f'Body服务不可用: HTTP {response.status_code}')
+        except Exception as e:
+            self.get_logger().warn(f'Body控制初始化失败: {e}，将跳过body控制')
+            self.body_enabled = False
+    
+    def send_body_command(self, l_1_pos, l_2_pos):
+        """发送body关节命令"""
+        if not self.body_enabled:
+            self.get_logger().warn('Body未启用，忽略命令')
+            return False
+        
+        try:
+            # l_1: prismatic关节，输入是米，需要转换为mm
+            l_1_mm = l_1_pos * 1000.0  # 米转换为毫米
+            l_1_mm = max(0, min(400, l_1_mm))  # 限制范围0-400mm (对应URDF的0-0.4m)
+            
+            # l_2: 腰部旋转，弧度转度数，直接映射
+            l_2_deg = l_2_pos * 180.0 / math.pi
+            l_2_deg = max(-160, min(160, l_2_deg))  # 限制范围（约对应±2.79弧度）
+            
+            moveto_url = f"{self.body_api_url}/moveto"
+            # 发送4个关节位置：[升降, 腰部旋转, 头部旋转, 头部俯仰]
+            # 只控制前两个，后两个保持0
+            payload = {
+                "pos": [l_1_mm, l_2_deg, 0.0, 0.0],
+                "vel": 50,  # 降低速度避免超时
+                "acc": 50   # 降低加速度
+            }
+            
+            self.get_logger().info(f'发送Body命令: l_1={l_1_pos:.3f}m->{l_1_mm:.1f}mm, l_2={l_2_pos:.3f}rad->{l_2_deg:.1f}°')
+            
+            # 增加超时时间，并添加重试机制
+            max_retries = 2
+            for attempt in range(max_retries):
+                try:
+                    response = requests.post(moveto_url, json=payload, timeout=15)  # 增加到15秒
+                    if response.status_code == 200:
+                        self.get_logger().info(f'Body命令发送成功 (尝试 {attempt+1})')
+                        return True
+                    else:
+                        self.get_logger().warn(f'Body命令HTTP错误 {response.status_code} (尝试 {attempt+1})')
+                        if attempt < max_retries - 1:
+                            time.sleep(1)  # 重试前等待
+                except requests.exceptions.Timeout:
+                    self.get_logger().warn(f'Body命令超时 (尝试 {attempt+1}/{max_retries})')
+                    if attempt < max_retries - 1:
+                        time.sleep(1)  # 重试前等待
+                except Exception as e:
+                    self.get_logger().warn(f'Body命令异常 (尝试 {attempt+1}): {e}')
+                    if attempt < max_retries - 1:
+                        time.sleep(1)
+            
+            return False
+                
+        except Exception as e:
+            self.get_logger().error(f'Body命令发送异常: {e}')
+            return False
     
     def reconnect_and_enable(self):
         """重新连接并使能机械臂"""
@@ -163,6 +256,50 @@ class ArmController(Node):
                 self.get_logger().error("轨迹中的关节数量不是6个！")
         self.get_logger().info("轨迹执行完成")
 
+    def execute_body_trajectory_callback(self, msg):
+        """执行body轨迹"""
+        self.get_logger().info(f"收到body轨迹，包含 {len(msg.points)} 个路径点")
+        
+        if not msg.points:
+            self.get_logger().warn("Body轨迹为空")
+            return
+            
+        # 检查关节名称
+        if 'l_1' not in msg.joint_names or 'l_2' not in msg.joint_names:
+            self.get_logger().error("Body轨迹必须包含l_1和l_2关节")
+            return
+            
+        try:
+            l_1_idx = msg.joint_names.index('l_1')
+            l_2_idx = msg.joint_names.index('l_2')
+            
+            # 执行轨迹中的每个点
+            for i, point in enumerate(msg.points):
+                l_1_pos = point.positions[l_1_idx]
+                l_2_pos = point.positions[l_2_idx]
+                
+                self.get_logger().info(f"Body轨迹点 {i+1}/{len(msg.points)}: l_1={l_1_pos:.3f}m, l_2={l_2_pos:.3f}rad")
+                
+                # 发送body命令
+                success = self.send_body_command(l_1_pos, l_2_pos)
+                if not success:
+                    self.get_logger().warn(f"Body轨迹点 {i+1} 执行失败")
+                
+                # 更新关节状态
+                l_1_full_idx = self.joint_names.index('l_1')
+                l_2_full_idx = self.joint_names.index('l_2')
+                self.current_joint_positions[l_1_full_idx] = l_1_pos
+                self.current_joint_positions[l_2_full_idx] = l_2_pos
+                
+                # 轨迹点间等待
+                if i < len(msg.points) - 1:
+                    time.sleep(0.1)
+                    
+        except Exception as e:
+            self.get_logger().error(f"Body轨迹执行失败: {e}")
+            
+        self.get_logger().info("Body轨迹执行完成")
+
     def update_and_publish_status(self):
         """获取机器人状态并发布 /joint_states"""
         if self.arm_connected and self.arm_enabled:
@@ -177,6 +314,10 @@ class ArmController(Node):
             for i in range(6):
                 self.current_joint_positions[7 + i] = urdf_positions[i]
 
+        # 更新body状态
+        if self.body_enabled:
+            self.update_and_publish_body_status()
+
         # 发布完整的关节状态
         joint_state_msg = JointState()
         joint_state_msg.header = Header()
@@ -185,6 +326,59 @@ class ArmController(Node):
         joint_state_msg.position = self.current_joint_positions
         self.joint_publisher.publish(joint_state_msg)
     
+    def update_and_publish_body_status(self):
+        """更新body状态"""
+        if not self.body_enabled:
+            return
+            
+        try:
+            # 获取body状态
+            status_url = f"{self.body_api_url}/status"
+            response = requests.get(status_url, timeout=2)
+            if response.status_code != 200:
+                self.get_logger().warn(f"获取Body状态失败: HTTP {response.status_code}")
+                return
+
+            parsed_json = response.json()
+            self.get_logger().debug(f"Body状态响应: {parsed_json}")
+            
+            # 根据实际API响应格式解析
+            # 假设返回格式为: {"pos": [高度_mm, 旋转_deg, ...]} 或 [{"pos": 高度_mm}, {"pos": 旋转_deg}, ...]
+            if isinstance(parsed_json, dict) and "pos" in parsed_json:
+                # 格式1: {"pos": [value1, value2, ...]}
+                positions = parsed_json["pos"]
+                l_1_mm = positions[0] if len(positions) > 0 else 0.0
+                l_2_deg = positions[1] if len(positions) > 1 else 0.0
+            elif isinstance(parsed_json, list) and len(parsed_json) >= 2:
+                # 格式2: [{"pos": value1}, {"pos": value2}, ...]
+                l_1_mm = parsed_json[0].get("pos", 0.0) if isinstance(parsed_json[0], dict) else 0.0
+                l_2_deg = parsed_json[1].get("pos", 0.0) if isinstance(parsed_json[1], dict) else 0.0
+            else:
+                self.get_logger().warn(f"Body状态格式不正确: {parsed_json}")
+                return
+
+            # 转换为关节空间
+            # l_1: prismatic关节，API返回mm，URDF需要米
+            l_1_rad = l_1_mm / 1000.0  # mm转换为米
+            l_2_rad = l_2_deg * math.pi / 180.0  # deg转rad
+
+            # 限制关节值在URDF定义的范围内
+            l_1_rad = max(0.0, min(0.4, l_1_rad))  # l_1范围: 0-0.4米
+            l_2_rad = max(-2.7925, min(2.7925, l_2_rad))  # l_2范围: ±2.7925弧度
+
+            # 更新关节状态
+            l_1_idx = self.joint_names.index('l_1')
+            l_2_idx = self.joint_names.index('l_2')
+            self.current_joint_positions[l_1_idx] = l_1_rad
+            self.current_joint_positions[l_2_idx] = l_2_rad
+
+            self.get_logger().debug(f"Body状态更新: l_1={l_1_mm}mm->({l_1_rad:.3f}m), l_2={l_2_deg}deg->({l_2_rad:.3f}rad)")
+
+        except requests.exceptions.Timeout:
+            self.get_logger().warn("获取Body状态超时")
+        except Exception as e:
+            self.get_logger().warn(f"获取Body状态异常: {e}")
+
     def get_current_joint_positions(self):
         """获取当前关节位置，带重试和错误处理以及稳定性过滤"""
         if not self.arm_connected or not self.arm_enabled:
@@ -233,17 +427,6 @@ class ArmController(Node):
         return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
     def convert_robot_to_urdf_angles(self, robot_angles):
-        """
-        将实际机器人的关节角度转换为URDF坐标系中的角度
-        
-        根据URDF中每个关节的rpy偏移，需要进行相应的角度调整：
-        - l_a1: rpy="3.1416 1.5708 0" (180°绕X轴 + 90°绕Y轴)
-        - l_a2: rpy="1.5708 -1.5708 0" (90°绕X轴 - 90°绕Y轴) 
-        - l_a3: rpy="0 0 0" (无偏移)
-        - l_a4: rpy="-1.5708 0 -1.5708" (-90°绕X轴 - 90°绕Z轴)
-        - l_a5: rpy="-1.5708 1.5708 0" (-90°绕X轴 + 90°绕Y轴)
-        - l_a6: rpy="1.5708 0 -1.5708" (90°绕X轴 - 90°绕Z轴)
-        """
         if len(robot_angles) != 6:
             self.get_logger().error(f"期望6个关节角度，但收到{len(robot_angles)}个")
             return [0.0] * 6
@@ -254,23 +437,12 @@ class ArmController(Node):
         # 这些偏移量根据URDF定义计算得出
         
         # l_a1: 有180°和90°的旋转偏移，可能需要反向旋转
-        urdf_angles[0] = robot_angles[0]  # 先尝试反向
-        
-        # l_a2: 有90°偏移组合
-        urdf_angles[1] = robot_angles[1]  # 先保持原值，稍后根据测试调整
-        
-        # l_a3: 无偏移，保持原值
+        urdf_angles[0] = robot_angles[0]  
+        urdf_angles[1] = robot_angles[1]  
         urdf_angles[2] = robot_angles[2]
-        
-        # l_a4: 有-90°和-90°的偏移
-        urdf_angles[3] = robot_angles[3] - math.pi   # 先尝试反向
-        
-        # l_a5: 有-90°和90°的偏移
-        urdf_angles[4] = robot_angles[4]  # 先保持原值
-        
-        # l_a6: 有90°和-90°的偏移
-        urdf_angles[5] = robot_angles[5]  # 先尝试反向
-        
+        urdf_angles[3] = robot_angles[3] - math.pi 
+        urdf_angles[4] = robot_angles[4] 
+        urdf_angles[5] = robot_angles[5]  
         self.get_logger().debug(f"关节角度转换: 机器人 {[f'{j:.3f}' for j in robot_angles]} -> URDF {[f'{j:.3f}' for j in urdf_angles]}")
         return urdf_angles
 
@@ -286,12 +458,12 @@ class ArmController(Node):
         robot_angles = [0.0] * 6
         
         # 应用与convert_robot_to_urdf_angles相反的变换
-        robot_angles[0] = urdf_angles[0]  # l_a1反向
-        robot_angles[1] = urdf_angles[1]   # l_a2保持
-        robot_angles[2] = urdf_angles[2]   # l_a3保持 
-        robot_angles[3] = urdf_angles[3] + math.pi  # l_a4反向
-        robot_angles[4] = urdf_angles[4]   # l_a5保持
-        robot_angles[5] = urdf_angles[5]  # l_a6反向
+        robot_angles[0] = urdf_angles[0] 
+        robot_angles[1] = urdf_angles[1]  
+        robot_angles[2] = urdf_angles[2]   
+        robot_angles[3] = urdf_angles[3] + math.pi  # l_a4 + pi
+        robot_angles[4] = urdf_angles[4]  
+        robot_angles[5] = urdf_angles[5]  
         
         self.get_logger().debug(f"关节角度逆转换: URDF {[f'{j:.3f}' for j in urdf_angles]} -> 机器人 {[f'{j:.3f}' for j in robot_angles]}")
         return robot_angles

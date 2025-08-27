@@ -21,11 +21,26 @@ class TrajectoryController(Node):
             '/jaka_arm_controller/follow_joint_trajectory',
             self.execute_trajectory_callback
         )
+
+        # Body动作服务器 - 接收MoveIt的body轨迹执行请求
+        self._body_action_server = ActionServer(
+            self,
+            FollowJointTrajectory,
+            '/body_controller/follow_joint_trajectory',
+            self.execute_body_action_callback
+        )
         
         # 发布器 - 发送关节命令给arm_controller
         self.joint_command_publisher = self.create_publisher(
             Float64MultiArray,
             '/arm/joint_command',
+            10
+        )
+        
+        # 发布器 - 发送body轨迹给arm_controller
+        self.body_trajectory_publisher = self.create_publisher(
+            JointTrajectory,
+            '/body_controller/joint_trajectory',
             10
         )
         
@@ -36,13 +51,6 @@ class TrajectoryController(Node):
             self.joint_state_callback,
             10
         )
-        
-        # 发布关节状态给MoveIt - 注释掉以避免与arm_controller的/joint_states冲突
-        # self.joint_state_publisher = self.create_publisher(
-        #     JointState,
-        #     '/joint_states',
-        #     10
-        # )
         
         # 当前关节状态
         self.current_joint_positions = [0.0] * 6
@@ -108,15 +116,7 @@ class TrajectoryController(Node):
                 feedback_msg.actual = JointTrajectoryPoint()
                 feedback_msg.actual.positions = self.current_joint_positions
                 feedback_msg.desired = point
-                goal_handle.publish_feedback(feedback_msg)
-                
-                # 等待到达目标时间或使用固定间隔
-                # if i < len(trajectory.points) - 1:
-                #     sleep_time = 0.5  # 每个点间隔0.5秒
-                #     time.sleep(sleep_time)
-                # else:
-                #     # 最后一个点，等待更长时间确保到达
-                #     time.sleep(1.0)   
+                goal_handle.publish_feedback(feedback_msg) 
             
             # 轨迹执行完成
             self.trajectory_executing = False
@@ -140,6 +140,89 @@ class TrajectoryController(Node):
         result = FollowJointTrajectory.Result()
         result.error_code = FollowJointTrajectory.Result.SUCCESSFUL
         return result
+
+    def execute_body_action_callback(self, goal_handle):
+        """执行body动作服务器的回调 - 处理MoveIt的FollowJointTrajectory请求"""
+        self.get_logger().info('收到Body轨迹动作执行请求')
+        
+        request = goal_handle.request
+        trajectory = request.trajectory
+        
+        # 验证关节名称
+        expected_joints = {'l_1', 'l_2'}
+        received_joints = set(trajectory.joint_names)
+        
+        if not expected_joints.issubset(received_joints):
+            self.get_logger().error(f'Body轨迹包含意外的关节: 期望 {expected_joints}, 收到 {received_joints}')
+            goal_handle.abort()
+            result = FollowJointTrajectory.Result()
+            result.error_code = FollowJointTrajectory.Result.INVALID_JOINTS
+            return result
+
+        self.get_logger().info(f'开始执行Body动作轨迹，包含 {len(trajectory.points)} 个点')
+        
+        try:
+            l_1_idx = trajectory.joint_names.index('l_1')
+            l_2_idx = trajectory.joint_names.index('l_2')
+            
+            # 直接执行最后一个点，避免过多的中间点导致超时
+            if trajectory.points:
+                final_point = trajectory.points[-1]
+                l_1_pos = final_point.positions[l_1_idx]
+                l_2_pos = final_point.positions[l_2_idx]
+                
+                self.get_logger().info(f"执行Body最终目标: l_1={l_1_pos:.3f}m, l_2={l_2_pos:.3f}rad")
+                
+                # 发布开始反馈
+                feedback_msg = FollowJointTrajectory.Feedback()
+                feedback_msg.joint_names = ['l_1', 'l_2']
+                feedback_msg.actual = JointTrajectoryPoint()
+                feedback_msg.actual.positions = [0.0, 0.0]  # 当前位置
+                feedback_msg.desired = final_point
+                goal_handle.publish_feedback(feedback_msg)
+                
+                # 创建body轨迹消息并发布给arm_controller
+                body_traj_msg = JointTrajectory()
+                body_traj_msg.header.stamp = self.get_clock().now().to_msg()
+                body_traj_msg.joint_names = ['l_1', 'l_2']
+                
+                # 创建轨迹点
+                traj_point = JointTrajectoryPoint()
+                traj_point.positions = [l_1_pos, l_2_pos]
+                traj_point.time_from_start.sec = 2  # 2秒内完成运动
+                body_traj_msg.points = [traj_point]
+                
+                # 发布body轨迹
+                self.body_trajectory_publisher.publish(body_traj_msg)
+                self.get_logger().info(f"已发布Body轨迹到arm_controller: l_1={l_1_pos:.3f}m, l_2={l_2_pos:.3f}rad")
+                
+                # 等待执行完成
+                time.sleep(3.0)  # 给arm_controller时间执行body命令
+                
+                # 发布最终反馈
+                feedback_msg.actual.positions = [l_1_pos, l_2_pos]
+                goal_handle.publish_feedback(feedback_msg)
+                
+                # 动作执行完成
+                goal_handle.succeed()
+                self.get_logger().info('Body动作轨迹执行完成')
+                
+                result = FollowJointTrajectory.Result()
+                result.error_code = FollowJointTrajectory.Result.SUCCESSFUL
+                return result
+            else:
+                self.get_logger().warn('Body轨迹为空')
+                goal_handle.abort()
+                result = FollowJointTrajectory.Result()
+                result.error_code = FollowJointTrajectory.Result.INVALID_GOAL
+                return result
+            
+        except Exception as e:
+            self.get_logger().error(f'Body动作轨迹执行失败: {e}')
+            goal_handle.abort()
+            result = FollowJointTrajectory.Result()
+            result.error_code = FollowJointTrajectory.Result.INVALID_GOAL
+            return result
 
 def main(args=None):
     rclpy.init(args=args)

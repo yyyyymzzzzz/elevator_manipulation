@@ -46,7 +46,7 @@ def test():
     # home
     response = requests.post(
         lumi_url.LUMI_MOVETO_URL,
-        json={"pos": [0.0, 0, 0, 0], "vel": 100, "acc": 100},
+        json={"pos": [0.1, 0, 0, 0], "vel": 100, "acc": 100},
     )
     if response.status_code != 200:
         print(f"Error: {response.status_code}")
@@ -55,25 +55,25 @@ def test():
     print("move to home ok")
 
     # move to position A blockly
-    for i in range(100):
-        response = requests.post(
-            lumi_url.LUMI_MOVETO_URL,
-            json={"pos": [250.0, -90.0, -90.0, -5.0], "vel": 100, "acc": 100},
-        )
-        if response.status_code != 200:
-            print(f"Error: {response.status_code}")
-            return
-        print("move to A ok")
+    # for i in range(100):
+    #     response = requests.post(
+    #         lumi_url.LUMI_MOVETO_URL,
+    #         json={"pos": [250.0, -90.0, -90.0, -5.0], "vel": 100, "acc": 100},
+    #     )
+    #     if response.status_code != 200:
+    #         print(f"Error: {response.status_code}")
+    #         return
+    #     print("move to A ok")
 
-        # move to position B blockly
-        response = requests.post(
-            lumi_url.LUMI_MOVETO_URL,
-            json={"pos": [10.0, 90.0, 90.0, 30.0], "vel": 100, "acc": 100},
-        )
-        if response.status_code != 200:
-            print(f"Error: {response.status_code}")
-            return
-        print("move to B ok")
+    #     # move to position B blockly
+    #     response = requests.post(
+    #         lumi_url.LUMI_MOVETO_URL,
+    #         json={"pos": [10.0, 90.0, 90.0, 30.0], "vel": 100, "acc": 100},
+    #     )
+    #     if response.status_code != 200:
+    #         print(f"Error: {response.status_code}")
+    #         return
+    #     print("move to B ok")
 
     # disable all joint
     time.sleep(2)
