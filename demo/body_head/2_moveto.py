@@ -46,7 +46,7 @@ def test():
     # home
     response = requests.post(
         lumi_url.LUMI_MOVETO_URL,
-        json={"pos": [100.0, 0, 0, 0], "vel": 100, "acc": 100},
+        json={"pos": [0.0, 0, 0, 0], "vel": 100, "acc": 100},
     )
     if response.status_code != 200:
         print(f"Error: {response.status_code}")
