@@ -1,0 +1,10 @@
+moveit_setup_assistant_config:
+  urdf:
+    package: jaka_lumi_sensors_v3
+    relative_path: urdf/jaka_lumi_sensors_v3.urdf
+  srdf:
+    relative_path: config/JAKA-Lumi-sensors-v3.srdf
+  package_settings:
+    author_name: ""
+    author_email: ""
+    generated_timestamp: 1756191882
