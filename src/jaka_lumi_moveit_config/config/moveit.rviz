@@ -1,43 +1,258 @@
 Panels:
   - Class: rviz_common/Displays
+    Help Height: 138
     Name: Displays
     Property Tree Widget:
       Expanded:
         - /MotionPlanning1
+        - /MarkerArray1
+        - /Camera1
+      Splitter Ratio: 0.5
+    Tree Height: 424
   - Class: rviz_common/Help
     Name: Help
   - Class: rviz_common/Views
+    Expanded:
+      - /Current View1
     Name: Views
+    Splitter Ratio: 0.5
 Visualization Manager:
+  Class: ""
   Displays:
-    - Class: rviz_default_plugins/Grid
+    - Alpha: 0.5
+      Cell Size: 1
+      Class: rviz_default_plugins/Grid
+      Color: 160; 160; 164
+      Enabled: true
+      Line Style:
+        Line Width: 0.029999999329447746
+        Value: Lines
       Name: Grid
+      Normal Cell Count: 0
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Plane: XY
+      Plane Cell Count: 10
+      Reference Frame: <Fixed Frame>
       Value: true
-    - Class: rviz_default_plugins/PointCloud2
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
+      Color: 255; 255; 255
+      Color Transformer: Intensity
+      Decay Time: 0
+      Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
       Name: PointCloud2
-      Value: true
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 2
+      Size (m): 0.009999999776482582
+      Style: Points
       Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
         Value: /camera/depth/points
-      Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true
-      Style: Points
-      Size (Pixels): 2
-      Alpha: 1.0
-      Queue Size: 10
-    - Class: moveit_rviz_plugin/MotionPlanning
+      Value: true
+    - Acceleration_Scaling_Factor: 0.1
+      Class: moveit_rviz_plugin/MotionPlanning
+      Enabled: true
+      Move Group Namespace: ""
+      MoveIt_Allow_Approximate_IK: false
+      MoveIt_Allow_External_Program: false
+      MoveIt_Allow_Replanning: false
+      MoveIt_Allow_Sensor_Positioning: false
+      MoveIt_Planning_Attempts: 10
+      MoveIt_Planning_Time: 5
+      MoveIt_Use_Cartesian_Path: false
+      MoveIt_Use_Constraint_Aware_IK: false
+      MoveIt_Workspace:
+        Center:
+          X: 0
+          Y: 0
+          Z: 0
+        Size:
+          X: 2
+          Y: 2
+          Z: 2
       Name: MotionPlanning
       Planned Path:
+        Color Enabled: false
+        Interrupt Display: false
+        Links:
+          All Links Enabled: true
+          Camera1_Link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          Camera2_Link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          Camera3_Link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          Expand Joint Details: false
+          Expand Link Details: false
+          Expand Tree: false
+          Link Tree Style: Links in Alphabetic Order
+          Radar_Link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          base_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          link_1:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          link_2:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          link_3:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          link_4:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          link_a1:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          link_a2:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          link_a3:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          link_a4:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          link_a5:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          link_a6:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          link_at:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          pw1_Link1:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          pw1_Link2:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          pw2_Link1:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          pw2_Link2:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          pw3_Link1:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          pw3_Link2:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          pw4_Link1:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          pw4_Link2:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          wheel_l:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          wheel_r:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          world:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
         Loop Animation: true
+        Robot Alpha: 0.5
+        Robot Color: 150; 50; 150
+        Show Robot Collision: false
+        Show Robot Visual: true
+        Show Trail: false
         State Display Time: 0.05 s
+        Trail Step Size: 1
         Trajectory Topic: display_planned_path
+        Use Sim Time: false
       Planning Metrics:
         Payload: 1
         Show Joint Torques: false
         Show Manipulability: false
         Show Manipulability Index: false
         Show Weight Limit: false
-        TextHeight: 0.08000000119209289
+        TextHeight: 0.07999999821186066
       Planning Request:
         Colliding Link Color: 255; 0; 0
         Goal State Alpha: 1
@@ -63,34 +278,237 @@ Visualization Manager:
         Attached Body Color: 150; 50; 150
         Links:
           All Links Enabled: true
+          Camera1_Link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          Camera2_Link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          Camera3_Link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
           Expand Joint Details: false
           Expand Link Details: false
           Expand Tree: false
+          Link Tree Style: Links in Alphabetic Order
+          Radar_Link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          base_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          link_1:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          link_2:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          link_3:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          link_4:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          link_a1:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          link_a2:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          link_a3:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          link_a4:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          link_a5:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          link_a6:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          link_at:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          pw1_Link1:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          pw1_Link2:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          pw2_Link1:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          pw2_Link2:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          pw3_Link1:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          pw3_Link2:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          pw4_Link1:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          pw4_Link2:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          wheel_l:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          wheel_r:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          world:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
         Robot Alpha: 1
-        Robot Color: 150; 50; 150
         Show Robot Collision: false
         Show Robot Visual: true
       Value: true
+      Velocity_Scaling_Factor: 0.1
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: MarkerArray
+      Namespaces:
+        button_detections: true
+        button_labels: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /button_3d_markers
+      Value: true
+    - Class: rviz_default_plugins/Camera
+      Enabled: true
+      Far Plane Distance: 100
+      Image Rendering: background and overlay
+      Name: Camera
+      Overlay Alpha: 0.5
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /camera/color/image_raw
+      Value: true
+      Visibility:
+        Grid: true
+        MarkerArray: true
+        MotionPlanning: true
+        PointCloud2: true
+        Value: true
+      Zoom Factor: 1
+  Enabled: true
   Global Options:
+    Background Color: 48; 48; 48
     Fixed Frame: world
+    Frame Rate: 30
+  Name: root
   Tools:
     - Class: rviz_default_plugins/Interact
+      Hide Inactive Objects: true
     - Class: rviz_default_plugins/MoveCamera
     - Class: rviz_default_plugins/Select
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
   Value: true
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 2.0
+      Distance: 1.0835914611816406
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.05999999865889549
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
       Focal Point:
-        X: -0.1
-        Y: 0.25
-        Z: 0.30
+        X: -0.13676847517490387
+        Y: -0.051088906824588776
+        Z: 0.9028009176254272
+      Focal Shape Fixed Size: true
+      Focal Shape Size: 0.05000000074505806
+      Invert Z Axis: false
       Name: Current View
-      Pitch: 0.5
+      Near Clip Distance: 0.009999999776482582
+      Pitch: 0.5450001955032349
       Target Frame: world
-      Yaw: -0.623
+      Value: Orbit (rviz_default_plugins)
+      Yaw: 2.182002305984497
+    Saved: ~
 Window Geometry:
-  Height: 975
-  QMainWindow State: 000000ff00000000fd0000000100000000000002b400000375fc0200000005fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000004100fffffffb000000100044006900730070006c006100790073010000003d00000123000000c900fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e00670100000166000001910000018800fffffffb0000000800480065006c0070000000029a0000006e0000006e00fffffffb0000000a0056006900650077007301000002fd000000b5000000a400ffffff000001f60000037500000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
-  Width: 1200
+  Camera:
+    collapsed: false
+  Displays:
+    collapsed: false
+  Height: 2010
+  Help:
+    collapsed: false
+  Hide Left Dock: false
+  Hide Right Dock: false
+  MotionPlanning:
+    collapsed: false
+  MotionPlanning - Trajectory Slider:
+    collapsed: false
+  QMainWindow State: 000000ff00000000fd0000000100000000000003750000073cfc0200000006fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000007c00fffffffb000000100044006900730070006c006100790073010000006f000002a20000018400fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e0067010000031d00000323000002c200fffffffb0000000800480065006c0070000000029a0000006e000000d500fffffffb0000000a00560069006500770073010000064c0000015f0000013500fffffffb0000000c00430061006d00650072006103000004e2000004d000000375000002f0000009cf0000073c00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Views:
+    collapsed: false
+  Width: 3408
+  X: 0
+  Y: 56

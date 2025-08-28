@@ -13,6 +13,11 @@
   <depend>cv_bridge</depend>
   <depend>message_filters</depend>
   <depend>OpenCV</depend>
+  <depend>visualization_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
 
   <exec_depend>python3-ultralytics</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
