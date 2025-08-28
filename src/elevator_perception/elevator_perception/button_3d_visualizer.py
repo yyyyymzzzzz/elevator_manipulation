@@ -63,7 +63,7 @@ class Button3DVisualizer(Node):
         
         self.camera_info_subscriber = self.create_subscription(
             CameraInfo,
-            '/camera/depth/camera_info',
+            '/camera/color/camera_info',
             self.camera_info_callback,
             10
         )
@@ -242,13 +242,15 @@ class Button3DVisualizer(Node):
         # 使用中位数深度值
         depth_m = np.median(depth_values)
         
-        # 使用实际的相机内参将像素坐标转换为3D坐标
+        # 使用彩色相机的内参将像素坐标转换为3D坐标
+        # 注意：我们使用彩色图像的像素坐标，但是深度值来自深度图像
+        # 这里假设彩色和深度图像已经对齐（大多数现代RGB-D相机都支持）
         fx = self.camera_info.k[0]  # 焦距 x
         fy = self.camera_info.k[4]  # 焦距 y  
         cx = self.camera_info.k[2]  # 主点 x
         cy = self.camera_info.k[5]  # 主点 y
         
-        # 计算相机光学坐标系下的3D点
+        # 计算彩色相机光学坐标系下的3D点
         x_3d = (pixel_x - cx) * depth_m / fx
         y_3d = (pixel_y - cy) * depth_m / fy
         z_3d = depth_m
