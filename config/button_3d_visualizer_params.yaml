@@ -5,9 +5,9 @@ button_3d_visualizer:
     min_depth: 0.2       # 最小有效深度值 (米)
 
     # 标记显示参数
-    marker_scale: 0.03   # 标记大小
+    marker_scale: 0.04   # 标记大小
     marker_lifetime: 1.0  # 标记生存时间 (秒) - 增加到10秒防止闪动
 
     # 坐标系设置
-    target_frame: "world"  # 目标坐标系
-    camera_frame: "camera_depth_optical_frame" # 相机坐标系 
+    target_frame: "world"  # 目标坐标系 - 与按钮检测的彩色图像坐标系相同
+    camera_frame: "camera_color_optical_frame" # 相机坐标系 - 使用彩色光学坐标系 
