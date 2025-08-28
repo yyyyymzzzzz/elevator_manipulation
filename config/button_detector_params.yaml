@@ -14,4 +14,4 @@ button_detector:
     resize_scale: 2.0     # 图像放大倍数
     
     # 检测参数
-    confidence_threshold: 0.6  # 置信度阈值，降低以检测更多小目标
+    confidence_threshold: 0.5  # 置信度阈值，降低以检测更多小目标

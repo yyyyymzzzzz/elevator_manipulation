@@ -40,6 +40,16 @@ def generate_launch_description():
         .to_moveit_configs()
     )
 
+    button_detector_config = os.path.join(
+        '/home/ymz/Workspace/elevator_manipulation/config',
+        'button_detector_params.yaml'
+    )
+    
+    button_3d_config = os.path.join(
+        '/home/ymz/Workspace/elevator_manipulation/config',
+        'button_3d_visualizer_params.yaml'
+    )
+
     # 1. Start move_group node
     run_move_group_node = Node(
         package="moveit_ros_move_group",
@@ -125,6 +135,23 @@ def generate_launch_description():
         arguments=['0.1', '0', '0', '0', '1.5708', '1.5708', 'Camera3_Link', 'camera_link'],
     )
 
+    # 按钮检测节点
+    button_detector_node = Node(
+        package='elevator_perception',
+        executable='button_detector_node',
+        name='button_detector',
+        parameters=[button_detector_config],
+        output='screen'
+    )
+
+    # 按钮3D可视化节点
+    button_3d_visualizer_node = Node(
+        package='elevator_perception',
+        executable='button_3d_visualizer',
+        name='button_3d_visualizer',
+        parameters=[button_3d_config],
+        output='screen'
+    )
 
     return LaunchDescription(
         [
@@ -134,6 +161,9 @@ def generate_launch_description():
             run_move_group_node,
             trajectory_controller_node,
             arm_controller_node,
+            camera_launch,
             static_tf_node,
+            button_detector_node,
+            button_3d_visualizer_node
         ]
     )
