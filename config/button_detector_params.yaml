@@ -1,3 +1,17 @@
 button_detector:
   ros__parameters:
     model_path: "/home/ymz/Workspace/elevator_manipulation/model/result/AdamW/weights/best.pt"
+    
+    # ROI裁剪参数 
+    enable_roi_crop: true
+    roi_x_ratio: 0.3      # ROI左上角x坐标占图像宽度的比例
+    roi_y_ratio: 0.2      # ROI左上角y坐标占图像高度的比例  
+    roi_width_ratio: 0.4  # ROI宽度占图像宽度的比例
+    roi_height_ratio: 0.6 # ROI高度占图像高度的比例
+    
+    # 图像缩放参数 
+    enable_resize: true
+    resize_scale: 2.0     # 图像放大倍数
+    
+    # 检测参数
+    confidence_threshold: 0.6  # 置信度阈值，降低以检测更多小目标
