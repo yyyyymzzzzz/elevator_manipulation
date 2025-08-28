@@ -13,6 +13,18 @@ Visualization Manager:
     - Class: rviz_default_plugins/Grid
       Name: Grid
       Value: true
+    - Class: rviz_default_plugins/PointCloud2
+      Name: PointCloud2
+      Value: true
+      Topic:
+        Value: /camera/depth/points
+      Unreliable: false
+      Use Fixed Frame: true
+      Use rainbow: true
+      Style: Points
+      Size (Pixels): 2
+      Alpha: 1.0
+      Queue Size: 10
     - Class: moveit_rviz_plugin/MotionPlanning
       Name: MotionPlanning
       Planned Path:
