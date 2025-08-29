@@ -1,0 +1,34 @@
+# OMPL Planning Pipeline Configuration (Corrected Version)
+
+ompl:
+  planning_plugins:
+    - ompl_interface/OMPLPlanner
+
+  request_adapters: >-
+    default_planning_request_adapters/AddTimeOptimalParameterization
+    default_planning_request_adapters/FixWorkspaceBounds
+    default_planning_request_adapters/FixStartStateBounds
+    default_planning_request_adapters/FixStartStateCollision
+    default_planning_request_adapters/FixStartStatePathConstraints
+
+  # Settings for the AddTimeOptimalParameterization adapter
+  # This is the key to generating dense trajectories
+  default_planning_request_adapters:
+    AddTimeOptimalParameterization:
+      type: planning_request_adapter/AddTimeOptimalParameterization
+      # Balanced parameters for stable slow motion
+      path_tolerance: 0.05  # Relaxed for stability
+      resample_dt: 0.5      # Increased to 500ms for better real-time performance
+      # Additional parameters to control speed
+      time_scaling_factor: 0.5  # Increased from 0.01 to 0.05 for stability
+
+  # Planner configurations for the 'jaka_arm' group
+  jaka_arm:
+    planner_configs:
+      - RRTConnect
+    projection_evaluator: joints(l_a1,l_a2)
+    longest_valid_segment_fraction: 0.01  # Balanced for smooth but not excessive segmentation
+    # Additional parameters for speed control
+    planning_time_limit: 15.0  # Reduced for faster planning
+    max_velocity_scaling_factor: 0.01  # Increased from 0.001 to 0.01 for stability
+    max_acceleration_scaling_factor: 0.01  # Increased from 0.001 to 0.01 for stability

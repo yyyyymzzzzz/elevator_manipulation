@@ -1,0 +1,28 @@
+# 轨迹优化参数配置文件 - 修复版本
+jaka_arm_controller:
+  ros__parameters:
+    # 关节空间中跳过中间点的最小距离阈值（弧度）
+    # 0.3弧度 ≈ 17度，更大的阈值来确保优化效果
+    # 推荐范围: 0.1 - 0.5
+    min_joint_distance: 1.0
+    
+    # 是否启用路径优化
+    # true: 启用优化，跳过距离很近的中间点
+    # false: 禁用优化，执行所有轨迹点
+    enable_path_optimization: true
+    
+    # 轨迹点之间的执行延迟（秒）
+    # 防止命令积压，让arm_controller有时间处理每个命令
+    # 推荐范围: 0.1 - 0.5
+    point_execution_delay: 0.05
+    
+    # 优化后最大保留的轨迹点数量
+    # 如果原始轨迹点数超过此值，将使用等间隔采样
+    # 推荐范围: 3 - 8 (减少更多中间点)
+    max_trajectory_points: 5
+
+# 调试技巧:
+# - 如果优化效果不明显，减小 min_joint_distance 值
+# - 如果运动不够平滑，增加 max_trajectory_points 值
+# - 如果出现命令积压，增加 point_execution_delay 值
+# - 临时禁用优化: ros2 param set /jaka_arm_controller enable_path_optimization false

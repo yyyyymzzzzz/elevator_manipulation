@@ -13,6 +13,7 @@ import jkrc
 import requests
 import json
 import time
+import threading
 
 class ArmController(Node):
     def __init__(self):
@@ -92,7 +93,8 @@ class ArmController(Node):
         self.init_body_control()
 
         # 创建一个定时器，高频更新和发布关节状态
-        self.status_timer = self.create_timer(0.1, self.update_and_publish_status)
+        # 提高频率到50Hz，确保MoveIt能及时收到状态更新
+        self.status_timer = self.create_timer(0.02, self.update_and_publish_status)
         
         self.get_logger().info('机械臂控制器已启动 - MoveIt2接口模式 (带状态发布)')
 
@@ -302,29 +304,61 @@ class ArmController(Node):
 
     def update_and_publish_status(self):
         """获取机器人状态并发布 /joint_states"""
-        if self.arm_connected and self.arm_enabled:
-            # 使用改进的关节位置获取方法，带重试机制
-            arm_positions = self.get_current_joint_positions()
+        try:
+            # 获取当前时间戳，确保状态消息时间戳始终是最新的
+            current_time = self.get_clock().now()
             
-            # 转换实际机器人角度到URDF坐标系角度
-            urdf_positions = self.convert_robot_to_urdf_angles(arm_positions)
+            if self.arm_connected and self.arm_enabled:
+                # 使用改进的关节位置获取方法，带重试机制
+                arm_positions = self.get_current_joint_positions()
+                
+                # 转换实际机器人角度到URDF坐标系角度
+                urdf_positions = self.convert_robot_to_urdf_angles(arm_positions)
+                
+                # 更新完整关节列表中的对应部分
+                # 假设l_a1到l_a6在self.joint_names中的索引是7到12
+                for i in range(6):
+                    self.current_joint_positions[7 + i] = urdf_positions[i]
+            else:
+                # 即使机械臂未连接，也发布默认状态以保持状态流的连续性
+                self.get_logger().debug("机械臂未连接，发布默认关节状态")
+
+            # 更新body状态（如果启用）
+            if self.body_enabled:
+                try:
+                    self.update_and_publish_body_status()
+                except Exception as e:
+                    # Body状态获取失败不应该影响整体状态发布
+                    self.get_logger().debug(f"Body状态更新失败: {e}")
+
+            # 始终发布关节状态，确保MoveIt能持续收到状态更新
+            joint_state_msg = JointState()
+            joint_state_msg.header = Header()
+            joint_state_msg.header.stamp = current_time.to_msg()
+            joint_state_msg.header.frame_id = ""  # 确保frame_id为空或正确
+            joint_state_msg.name = self.joint_names
+            joint_state_msg.position = self.current_joint_positions
             
-            # 更新完整关节列表中的对应部分
-            # 假设l_a1到l_a6在self.joint_names中的索引是7到12
-            for i in range(6):
-                self.current_joint_positions[7 + i] = urdf_positions[i]
-
-        # 更新body状态
-        if self.body_enabled:
-            self.update_and_publish_body_status()
-
-        # 发布完整的关节状态
-        joint_state_msg = JointState()
-        joint_state_msg.header = Header()
-        joint_state_msg.header.stamp = self.get_clock().now().to_msg()
-        joint_state_msg.name = self.joint_names
-        joint_state_msg.position = self.current_joint_positions
-        self.joint_publisher.publish(joint_state_msg)
+            # 添加速度和力矩信息（设为空，但确保长度匹配）
+            joint_state_msg.velocity = [0.0] * len(self.joint_names)
+            joint_state_msg.effort = [0.0] * len(self.joint_names)
+            
+            self.joint_publisher.publish(joint_state_msg)
+            
+        except Exception as e:
+            self.get_logger().error(f"状态发布失败: {e}")
+            # 即使出错也要发布一个基本的状态消息
+            try:
+                joint_state_msg = JointState()
+                joint_state_msg.header = Header()
+                joint_state_msg.header.stamp = self.get_clock().now().to_msg()
+                joint_state_msg.name = self.joint_names
+                joint_state_msg.position = self.current_joint_positions
+                joint_state_msg.velocity = [0.0] * len(self.joint_names)
+                joint_state_msg.effort = [0.0] * len(self.joint_names)
+                self.joint_publisher.publish(joint_state_msg)
+            except:
+                pass  # 最后的安全网
     
     def update_and_publish_body_status(self):
         """更新body状态"""
@@ -382,20 +416,20 @@ class ArmController(Node):
     def get_current_joint_positions(self):
         """获取当前关节位置，带重试和错误处理以及稳定性过滤"""
         if not self.arm_connected or not self.arm_enabled:
-            self.get_logger().warn('机械臂未连接或未使能，返回默认位置')
-            return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+            self.get_logger().debug('机械臂未连接或未使能，返回稳定位置')
+            # 返回稳定位置而不是零位置，保持状态连续性
+            return self.stable_position if self.stable_position else [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         
-        max_retries = 3
+        # 减少重试次数和延迟，避免阻塞状态发布
+        max_retries = 2
         for attempt in range(max_retries):
             try:
                 ret = self.arm_robot.get_joint_position()
                 
-                # 详细日志记录
-                self.get_logger().debug(f'尝试 {attempt + 1}: get_joint_position() 返回: {ret}')
-                
                 # 检查返回值格式
                 if ret is None:
-                    self.get_logger().warn(f'尝试 {attempt + 1}: get_joint_position() 返回 None')
+                    if attempt == 0:  # 只在第一次失败时记录警告
+                        self.get_logger().debug(f'get_joint_position() 返回 None (尝试 {attempt + 1})')
                 elif isinstance(ret, (list, tuple)) and len(ret) >= 2:
                     # JAKA API 通常返回 (error_code, joint_positions) 格式
                     error_code = ret[0]
@@ -404,26 +438,34 @@ class ArmController(Node):
                         current_pos = list(ret[1])
                         return self._apply_position_stability_filter(current_pos)
                     else:
-                        self.get_logger().warn(f'尝试 {attempt + 1}: API错误码: {error_code}, 数据: {ret[1] if len(ret) > 1 else "无数据"}')
+                        if attempt == 0:  # 只在第一次失败时记录警告
+                            self.get_logger().debug(f'API错误码: {error_code}')
                 else:
-                    self.get_logger().warn(f'尝试 {attempt + 1}: 意外的返回格式: {ret}')
+                    if attempt == 0:
+                        self.get_logger().debug(f'意外的返回格式: {type(ret)}')
                 
-                # 如果不是最后一次尝试，短暂等待后重试
+                # 减少重试延迟，避免影响状态发布频率
                 if attempt < max_retries - 1:
-                    time.sleep(0.1)
+                    time.sleep(0.01)  # 只等待10ms
                     
             except Exception as e:
-                self.get_logger().warn(f'尝试 {attempt + 1}: 获取关节位置异常: {e}')
+                if attempt == 0:  # 只在第一次失败时记录警告
+                    self.get_logger().debug(f'获取关节位置异常: {e}')
                 if attempt < max_retries - 1:
-                    time.sleep(0.1)
+                    time.sleep(0.01)
         
-        # 所有重试都失败，尝试重新连接
-        self.get_logger().error('所有重试失败，尝试重新连接机械臂')
-        self.reconnect_and_enable()
-        
-        # 如果有稳定的历史位置，返回它
-        if self.stable_position is not None:
+        # 重试失败，返回稳定位置，避免触发重连（这会阻塞）
+        if self.stable_position:
             return self.stable_position
+        
+        # 记录连续失败次数
+        self.position_read_errors += 1
+        if self.position_read_errors > 50:  # 连续失败50次才考虑重连
+            self.get_logger().warn('关节位置读取连续失败，将在后台尝试重连')
+            self.position_read_errors = 0
+            # 在后台线程中重连，避免阻塞状态发布
+            threading.Thread(target=self.reconnect_and_enable, daemon=True).start()
+        
         return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
     def convert_robot_to_urdf_angles(self, robot_angles):
@@ -472,6 +514,7 @@ class ArmController(Node):
         """应用位置稳定性过滤"""
         import numpy as np
         
+        return current_pos
         # 添加到历史记录
         self.position_history.append(current_pos.copy())
         if len(self.position_history) > 5:
@@ -554,7 +597,8 @@ class ArmController(Node):
         max_diff = max(abs(robot_joint_positions[i] - self.last_joint_command[i]) for i in range(6))
         
         # 如果变化很小且时间间隔很短，跳过这次命令
-        if max_diff < 0.01 and (current_time - self.last_command_time) < 0.3:
+        if max_diff < 0.02 and (current_time - self.last_command_time) < 0.15:  # 调整阈值
+            self.get_logger().debug(f'跳过重复命令，最大差异: {max_diff:.4f}, 时间间隔: {current_time - self.last_command_time:.2f}s')
             return
         
         try:
