@@ -5,6 +5,7 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /MotionPlanning1
+        - /MotionPlanning1/Planning Request1
         - /MarkerArray1
         - /Camera1
       Splitter Ratio: 0.5
@@ -261,7 +262,7 @@ Visualization Manager:
         Joint Violation Color: 255; 0; 255
         Planning Group: jaka_arm
         Query Goal State: true
-        Query Start State: true
+        Query Start State: false
         Show Workspace: false
         Start State Alpha: 1
         Start State Color: 0; 255; 0
