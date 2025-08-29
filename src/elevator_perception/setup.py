@@ -25,6 +25,7 @@ setup(
         'console_scripts': [
             'button_detector_node = elevator_perception.button_detector_node:main',
             'button_3d_visualizer = elevator_perception.button_3d_visualizer:main',
+            'button_target_planner = elevator_perception.button_target_planner:main',
         ],
     },
 )

@@ -1,0 +1,18 @@
+button_target_planner:
+  ros__parameters:
+    # 目标位置计算参数
+    target_distance: 0.10      # 目标位置距离按钮平面的距离 (m)
+    plane_radius: 0.05         # 用于拟合平面的点云半径 (m)
+    min_points_for_plane: 30   # 拟合平面所需的最少点数
+
+    # 坐标系设置
+    target_frame: "world"      # 目标坐标系
+    camera_frame: "camera_color_optical_frame" # 相机坐标系
+
+    # 可视化参数
+    marker_scale: 0.02         # 标记大小
+    marker_lifetime: 10.0       # 标记生存时间 (秒)
+
+    # 按钮选择策略
+    button_selection_method: "first"  # "first": 第一个, "closest": 最近的, "manual": 手动指定
+    manual_button_index: 0     # 当选择方法为manual时，指定按钮索引

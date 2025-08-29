@@ -38,7 +38,28 @@ def generate_launch_description():
             publish_robot_description=True, publish_robot_description_semantic=True
         )
         .to_moveit_configs()
-    )
+    )    
+    # 自定义 OMPL 配置作为参数字典
+    ompl_planning_yaml_params = {
+        "planning_pipelines": ["ompl"],
+        "default_planning_pipeline": "ompl",
+        "ompl": {
+            "planning_plugin": "ompl_interface/OMPLPlanner",
+            "request_adapters": "default_planning_request_adapters/AddTimeOptimalParameterization default_planning_request_adapters/FixWorkspaceBounds default_planning_request_adapters/FixStartStateBounds default_planning_request_adapters/FixStartStateCollision default_planning_request_adapters/FixStartStatePathConstraints",
+            "default_planning_request_adapters": {
+                "AddTimeOptimalParameterization": {
+                    "type": "planning_request_adapter/AddTimeOptimalParameterization",
+                    "path_tolerance": 0.1,
+                    "resample_dt": 0.5,
+                }
+            },
+        },
+        "jaka_arm": {
+            "planner_configs": ["RRTConnect"],
+            "projection_evaluator": "joints(l_a1,l_a2)",
+            "longest_valid_segment_fraction": 1.0,
+        },
+    }
 
     button_detector_config = os.path.join(
         '/home/ymz/Workspace/elevator_manipulation/config',
@@ -57,13 +78,15 @@ def generate_launch_description():
         output="screen",
         parameters=[
             moveit_config.to_dict(),
+            ompl_planning_yaml_params, 
             {"publish_robot_description_semantic": True},
             {"allow_trajectory_execution": True},
             {"fake_execution": False},
             {'use_sim_time': use_sim_time},
             {"trajectory_execution.allowed_start_tolerance": 0.1},
             {"trajectory_execution.allowed_goal_tolerance": 0.1},
-            {"trajectory_execution.allowed_execution_duration_scaling": 2.0},
+            {"trajectory_execution.allowed_execution_duration_scaling": 25.0},  # 增加执行时间容忍度
+            {"trajectory_execution.execution_duration_monitoring": True},
         ],
     )
 
@@ -99,12 +122,19 @@ def generate_launch_description():
             ],
     )
 
-    # 4. Start trajectory controller
+    # 4. Start trajectory controller with optimization parameters
+    trajectory_optimization_params = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        "config",
+        "trajectory_optimization_params.yaml"
+    )
+    
     trajectory_controller_node = Node(
         package='elevator_arm_control',
         executable='trajectory_controller',
         name='jaka_arm_controller',
-        output='screen'
+        output='screen',
+        parameters=[trajectory_optimization_params] if os.path.exists(trajectory_optimization_params) else []
     )
 
     # 5. Start arm_controller
