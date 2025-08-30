@@ -6,8 +6,7 @@ Panels:
       Expanded:
         - /MotionPlanning1
         - /MotionPlanning1/Planning Request1
-        - /MarkerArray1
-        - /Camera1
+        - /MarkerArray2
       Splitter Ratio: 0.5
     Tree Height: 424
   - Class: rviz_common/Help
@@ -261,7 +260,7 @@ Visualization Manager:
         Interactive Marker Size: 0.25
         Joint Violation Color: 255; 0; 255
         Planning Group: jaka_arm
-        Query Goal State: true
+        Query Goal State: false
         Query Start State: false
         Show Workspace: false
         Start State Alpha: 1
@@ -455,6 +454,23 @@ Visualization Manager:
         PointCloud2: true
         Value: true
       Zoom Factor: 1
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: MarkerArray
+      Namespaces:
+        normal_arrow: true
+        target_axis_x: true
+        target_axis_y: true
+        target_axis_z: true
+        target_line: true
+        target_position: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /button_target_markers
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -473,25 +489,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 1.0835914611816406
+      Distance: 1.049761176109314
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.13676847517490387
-        Y: -0.051088906824588776
-        Z: 0.9028009176254272
+        X: 0.011599652469158173
+        Y: -0.32184529304504395
+        Z: 0.8543902039527893
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.9100009799003601
+      Pitch: 0.31979694962501526
       Target Frame: world
       Value: Orbit (rviz_default_plugins)
-      Yaw: 1.4551864862442017
+      Yaw: 0.9783525466918945
     Saved: ~
 Window Geometry:
   Camera:
