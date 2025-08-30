@@ -23,6 +23,7 @@ setup(
             'arm_controller = elevator_arm_control.arm_controller:main',
             'arm_pose_calculator = elevator_arm_control.arm_pose_calculator:main',
             'trajectory_controller = elevator_arm_control.trajectory_controller:main',
+            'button_follower = elevator_arm_control.button_follower:main',
         ],
     },
 )

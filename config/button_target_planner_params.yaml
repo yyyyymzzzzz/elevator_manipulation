@@ -1,8 +1,8 @@
 button_target_planner:
   ros__parameters:
     # 目标位置计算参数
-    target_distance: 0.10      # 目标位置距离按钮平面的距离 (m)
-    plane_radius: 0.05         # 用于拟合平面的点云半径 (m)
+    target_distance: 0.20      # 目标位置距离按钮平面的距离 (m)
+    plane_radius: 0.02         # 用于拟合平面的点云半径 (m)
     min_points_for_plane: 30   # 拟合平面所需的最少点数
 
     # 坐标系设置
