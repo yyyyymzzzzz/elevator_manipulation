@@ -93,8 +93,8 @@ class ArmController(Node):
         self.init_body_control()
 
         # 创建一个定时器，高频更新和发布关节状态
-        # 提高频率到50Hz，确保MoveIt能及时收到状态更新
-        self.status_timer = self.create_timer(0.02, self.update_and_publish_status)
+        # 提高频率到100Hz，确保MoveIt能及时收到状态更新
+        self.status_timer = self.create_timer(0.01, self.update_and_publish_status)
         
         self.get_logger().info('机械臂控制器已启动 - MoveIt2接口模式 (带状态发布)')
 
@@ -294,8 +294,8 @@ class ArmController(Node):
                 self.current_joint_positions[l_2_full_idx] = l_2_pos
                 
                 # 轨迹点间等待
-                if i < len(msg.points) - 1:
-                    time.sleep(0.1)
+                # if i < len(msg.points) - 1:
+                #     time.sleep(0.1)
                     
         except Exception as e:
             self.get_logger().error(f"Body轨迹执行失败: {e}")
@@ -316,7 +316,6 @@ class ArmController(Node):
                 urdf_positions = self.convert_robot_to_urdf_angles(arm_positions)
                 
                 # 更新完整关节列表中的对应部分
-                # 假设l_a1到l_a6在self.joint_names中的索引是7到12
                 for i in range(6):
                     self.current_joint_positions[7 + i] = urdf_positions[i]
             else:
@@ -446,7 +445,7 @@ class ArmController(Node):
                 
                 # 减少重试延迟，避免影响状态发布频率
                 if attempt < max_retries - 1:
-                    time.sleep(0.01)  # 只等待10ms
+                    time.sleep(0.005)  # 只等待5ms
                     
             except Exception as e:
                 if attempt == 0:  # 只在第一次失败时记录警告
@@ -593,17 +592,15 @@ class ArmController(Node):
         # 将URDF坐标系的角度转换为实际机器人的角度
         robot_joint_positions = self.convert_urdf_to_robot_angles(urdf_joint_positions)
         
-        # 计算与上次命令的差异
-        max_diff = max(abs(robot_joint_positions[i] - self.last_joint_command[i]) for i in range(6))
-        
         # 如果变化很小且时间间隔很短，跳过这次命令
-        if max_diff < 0.02 and (current_time - self.last_command_time) < 0.15:  # 调整阈值
-            self.get_logger().debug(f'跳过重复命令，最大差异: {max_diff:.4f}, 时间间隔: {current_time - self.last_command_time:.2f}s')
-            return
+        # max_diff = max(abs(robot_joint_positions[i] - self.last_joint_command[i]) for i in range(6))
+        # if max_diff < 0.02 and (current_time - self.last_command_time) < 0.15:  # 调整阈值
+        #     self.get_logger().debug(f'跳过重复命令，最大差异: {max_diff:.4f}, 时间间隔: {current_time - self.last_command_time:.2f}s')
+        #     return
         
         try:
             # 发送关节角度给实际机器人
-            self.arm_robot.joint_move(robot_joint_positions, 0, False, 0.8)  # 非阻塞模式，速度0.8
+            self.arm_robot.joint_move(robot_joint_positions, 0, False, 1.0)  # 非阻塞模式，速度0.8
             self.get_logger().info(f'执行关节命令 (URDF): {[f"{j:.3f}" for j in urdf_joint_positions]}')
             self.get_logger().info(f'执行关节命令 (机器人): {[f"{j:.3f}" for j in robot_joint_positions]}')
             

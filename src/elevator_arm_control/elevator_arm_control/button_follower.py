@@ -34,26 +34,26 @@ class ButtonFollower(Node):
     def __init__(self):
         super().__init__("button_follower_node")
 
-        # 1. TF2 监听器
+        # TF2 监听器
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
         
-        # 2. MoveIt 规划服务的客户端
+        # MoveIt 规划服务的客户端
         self.planning_client = self.create_client(GetMotionPlan, "/plan_kinematic_path")
         
-        # 3. trajectory_controller 的 Action 客户端
+        # trajectory_controller 的 Action 客户端
         self.execution_client = ActionClient(
             self, FollowJointTrajectory, "/jaka_arm_controller/follow_joint_trajectory"
         )
         
-        # 4. 目标点订阅者
+        # 目标点订阅者
         self.subscription = self.create_subscription(
             PoseStamped,
             '/button_target_pose',
             self.target_pose_callback,
             10)
         
-        # 5. 当前末端执行器位置订阅者
+        # 当前末端执行器位置订阅者
         self.current_pose_sub = self.create_subscription(
             PoseStamped,
             '/joint_states', 
@@ -66,21 +66,20 @@ class ButtonFollower(Node):
         self.is_executing = False
         self.is_going_home = False
         self.current_goal_pose = None
-        self.current_step = "idle"  # 新增：跟踪当前执行步骤
-        self.trajectory_completed = False  # 新增：确认轨迹是否完成
+        self.current_step = "idle" 
+        self.trajectory_completed = False  
         
-        # === 【新增】用于管理定时器的成员变量 ===
         self.pause_timer: Timer = None
-        self.position_check_timer: Timer = None  # 用于检查位置的定时器
+        self.position_check_timer: Timer = None  
         
         # 位置检查相关参数
-        self.position_tolerance = 0.02  # 位置容忍度 (米)
-        self.orientation_tolerance = 0.1  # 方向容忍度 (弧度)
-        self.max_position_check_time = 10.0  # 最大位置检查时间 (秒)
+        self.position_tolerance = 0.1  # 位置容忍度 (米)
+        self.orientation_tolerance = 0.3  # 方向容忍度 (弧度)
+        self.max_position_check_time = 20.0  # 最大位置检查时间 (秒)
         self.position_check_start_time = None
 
-        # 定义Home位置的关节角度 (使用您文件中的值)
-        self.home_joint_angles = [0.0*math.pi, 0.0*math.pi, 0.0*math.pi/2.0, 0.0, 0.0, 0.0]
+        # 定义Home位置的关节角度 
+        self.home_joint_angles = [-1.0*math.pi/2.0, 0.0, math.pi/2.0, 0.0, 0.0, 0.0]
         self.joint_names = ['l_a1', 'l_a2', 'l_a3', 'l_a4', 'l_a5', 'l_a6']
 
         # 目标接收冷却时间控制
@@ -144,9 +143,6 @@ class ButtonFollower(Node):
         
         position_error = (pos_diff_x**2 + pos_diff_y**2 + pos_diff_z**2)**0.5
         
-        # 简化的方向检查 (可以根据需要改进)
-        # 这里只是一个基本的检查，实际应用中可能需要更复杂的四元数比较
-        
         position_ok = position_error < self.position_tolerance
         
         if position_ok:
@@ -207,7 +203,7 @@ class ButtonFollower(Node):
         request = GetMotionPlan.Request()
         motion_plan_request = MotionPlanRequest()
         motion_plan_request.group_name = "jaka_arm"
-        motion_plan_request.planner_id = "RRTConnectkConfigDefault"
+        motion_plan_request.planner_id = "RRTstar"
         motion_plan_request.allowed_planning_time = 10.0
 
         constraints = Constraints()
@@ -216,7 +212,7 @@ class ButtonFollower(Node):
         position_constraint.link_name = "link_a6"
         bounding_box = SolidPrimitive()
         bounding_box.type = SolidPrimitive.BOX
-        bounding_box.dimensions = [0.07, 0.07, 0.07] #使用您文件中的值
+        bounding_box.dimensions = [0.01, 0.01, 0.02] 
         position_constraint.constraint_region.primitives.append(bounding_box)
         position_constraint.constraint_region.primitive_poses.append(goal_pose.pose)
         position_constraint.weight = 1.0
@@ -226,10 +222,10 @@ class ButtonFollower(Node):
         orientation_constraint.header.frame_id = goal_pose.header.frame_id
         orientation_constraint.link_name = "link_a6"
         orientation_constraint.orientation = goal_pose.pose.orientation
-        orientation_constraint.absolute_x_axis_tolerance = 0.1 # 使用您文件中的值
-        orientation_constraint.absolute_y_axis_tolerance = 0.1 # 使用您文件中的值
-        orientation_constraint.absolute_z_axis_tolerance = 0.1 # 使用您文件中的值
-        orientation_constraint.weight = 1.0
+        orientation_constraint.absolute_x_axis_tolerance = 0.03 
+        orientation_constraint.absolute_y_axis_tolerance = 0.03 
+        orientation_constraint.absolute_z_axis_tolerance = 3.0
+        orientation_constraint.weight = 2.0
         constraints.orientation_constraints.append(orientation_constraint)
         
         motion_plan_request.goal_constraints.append(constraints)

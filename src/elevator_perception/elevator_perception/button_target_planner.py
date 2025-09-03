@@ -14,6 +14,7 @@ from tf2_ros import Buffer, TransformListener
 from tf2_geometry_msgs import do_transform_point
 from geometry_msgs.msg import PointStamped
 import rclpy.duration
+import copy
 
 class ButtonTargetPlanner(Node):
     def __init__(self):
@@ -23,7 +24,7 @@ class ButtonTargetPlanner(Node):
         self.declare_parameters(
             namespace='',
             parameters=[
-                ('target_distance', 0.10),  # 目标位置距离按钮平面的距离 (m)
+                ('target_distance', 0.20),  # 目标位置距离按钮平面的距离 (m)
                 ('plane_radius', 0.05),     # 用于拟合平面的点云半径 (m)
                 ('min_points_for_plane', 30), # 拟合平面所需的最少点数
                 ('target_frame', 'world'),
@@ -96,19 +97,99 @@ class ButtonTargetPlanner(Node):
         self.selected_button_index = 0
         self.current_target_pose = None
         
-        # 创建定时器，定期重新发布标记
+        # 按钮循环发布相关变量
+        self.button_switch_duration = 30.0  # 每个按钮发布30秒
+        self.last_button_switch_time = None
+        self.is_sequential_mode = True  # 启用顺序模式
+        self._last_log_time = -1  # 用于控制日志输出频率
+        
+        # 固定目标位置相关变量
+        self.fixed_target_pose = None  # 存储固定的目标位置
+        self.is_target_position_fixed = False  # 标记目标位置是否已固定
+        
+        # 创建定时器，定期重新发布标记和目标位置
         self.marker_republish_timer = self.create_timer(
-            1.0,
+            0.1,  # 更高频率发布，确保消息持续发送
             self.republish_markers_callback
         )
         
+        # 创建定时器，用于按钮切换检查
+        self.button_switch_timer = self.create_timer(
+            1.0,
+            self.check_button_switch_callback
+        )
+        
         self.get_logger().info('按钮目标规划节点已启动')
-        self.get_logger().info(f'目标距离: {self.target_distance}m, 按钮选择方法: {self.button_selection_method}')
+        self.get_logger().info(f'目标距离: {self.target_distance}m, 按钮选择方法: 顺序循环 (每{self.button_switch_duration}秒切换)')
+        self.get_logger().info(f'持续发布频率: 10Hz (每100ms发布一次目标位置和可视化)')
 
     def republish_markers_callback(self):
-        """定期重新发布标记以防止消失"""
-        if self.current_target_pose is not None:
+        """定期重新发布标记和目标位置以防止消失，确保30秒内持续发送相同数据"""
+        # 优先使用固定的目标位置，确保30秒内数据完全一致
+        if self.fixed_target_pose is not None:
+            # 使用固定的目标位置，确保数据一致性
+            self.current_target_pose = self.fixed_target_pose
+            
+            # 同时发布可视化标记和目标位置
             self.publish_target_visualization()
+            self.publish_target_pose()
+            
+            # 记录发布信息
+            remaining_time = 0
+            if self.last_button_switch_time is not None:
+                current_time = self.get_clock().now()
+                elapsed_time = (current_time - self.last_button_switch_time).nanoseconds / 1e9
+                remaining_time = max(0, self.button_switch_duration - elapsed_time)
+            
+            self.get_logger().debug(f'持续发布固定目标位置和可视化，剩余时间: {remaining_time:.1f}s')
+        elif self.current_target_pose is not None:
+            # 备用方案：如果没有固定的目标位置，使用当前目标位置
+            self.publish_target_visualization()
+            self.publish_target_pose()
+            self.get_logger().debug('发布当前目标位置（非固定模式）')
+
+    def check_button_switch_callback(self):
+        """检查是否需要切换到下一个按钮"""
+        if not self.is_sequential_mode or not self.current_button_positions:
+            return
+        
+        current_time = self.get_clock().now()
+        
+        # 如果是第一次运行或者到了切换时间
+        if (self.last_button_switch_time is None or 
+            (current_time - self.last_button_switch_time).nanoseconds / 1e9 >= self.button_switch_duration):
+            
+            # 切换到下一个按钮
+            self.selected_button_index = (self.selected_button_index + 1) % len(self.current_button_positions)
+            self.last_button_switch_time = current_time
+            
+            # 重置固定位置标志，允许重新计算新按钮的目标位置
+            self.is_target_position_fixed = False
+            self.fixed_target_pose = None
+            
+            self.get_logger().info(f'切换到按钮 {self.selected_button_index + 1}/{len(self.current_button_positions)}')
+            
+            # 重新计算目标位置
+            self.calculate_and_publish_target()
+        else:
+            # 如果还在当前按钮的30秒内，继续发布固定的目标位置
+            if self.fixed_target_pose is not None:
+                self.current_target_pose = self.fixed_target_pose
+                # 注意：不需要在这里调用发布函数，因为republish_markers_callback会处理持续发布
+                
+                # 显示剩余时间信息
+                current_time = self.get_clock().now()
+                elapsed_time = (current_time - self.last_button_switch_time).nanoseconds / 1e9
+                remaining_time = max(0, self.button_switch_duration - elapsed_time)
+                
+                # 每5秒输出一次状态信息
+                if int(elapsed_time) % 5 == 0 and int(elapsed_time) != int(getattr(self, '_last_log_time', -1)):
+                    self._last_log_time = int(elapsed_time)
+                    # 验证目标位置数据的一致性
+                    if self.fixed_target_pose is not None and self.current_target_pose is not None:
+                        pos_match = np.allclose(self.fixed_target_pose['position'], self.current_target_pose['position'])
+                        self.get_logger().info(f'按钮 {self.selected_button_index + 1}/{len(self.current_button_positions)} '
+                                              f'持续发布中，剩余时间: {remaining_time:.1f}s, 数据一致性: {"✓" if pos_match else "✗"}')
 
     def camera_info_callback(self, msg):
         """接收相机内参信息"""
@@ -142,26 +223,70 @@ class ButtonTargetPlanner(Node):
             self.current_target_pose = None
             return
         
-        self.current_button_positions = button_positions
-        self.get_logger().info(f'收到 {len(button_positions)} 个按钮位置')
+        # 按ID排序，确保顺序一致
+        button_positions.sort(key=lambda x: x['id'])
         
-        # 选择目标按钮
-        selected_button = self.select_target_button(button_positions)
-        if selected_button is None:
-            self.get_logger().warn('未能选择目标按钮')
-            return
+        # 检查是否是新的按钮集合
+        if len(button_positions) != len(self.current_button_positions):
+            self.get_logger().info(f'检测到按钮数量变化: {len(self.current_button_positions)} -> {len(button_positions)}')
+            self.current_button_positions = button_positions
+            self.selected_button_index = 0  # 重置到第一个按钮
+            self.last_button_switch_time = self.get_clock().now()
             
-        self.get_logger().info(f'选择按钮 ID: {selected_button["id"]}, '
+            # 重置固定位置标志
+            self.is_target_position_fixed = False
+            self.fixed_target_pose = None
+            
+            self.calculate_and_publish_target()
+        else:
+            # 如果目标位置已经固定（在30秒发布期间），不更新按钮位置，保持数据一致性
+            if not self.is_target_position_fixed:
+                # 只有在目标位置未固定时才更新按钮位置
+                self.current_button_positions = button_positions
+            else:
+                # 目标位置已固定，忽略按钮位置更新，确保发布数据的一致性
+                self.get_logger().debug('目标位置已固定，忽略按钮位置更新以保持数据一致性')
+        
+        self.get_logger().info(f'收到 {len(button_positions)} 个按钮位置')
+
+    def calculate_and_publish_target(self):
+        """计算并发布当前选中按钮的目标位置"""
+        if not self.current_button_positions:
+            return
+        
+        # 确保索引有效
+        if self.selected_button_index >= len(self.current_button_positions):
+            self.selected_button_index = 0
+        
+        selected_button = self.current_button_positions[self.selected_button_index]
+        
+        self.get_logger().info(f'选择按钮 {self.selected_button_index + 1}/{len(self.current_button_positions)}, '
+                              f'ID: {selected_button["id"]}, '
                               f'位置: ({selected_button["position"][0]:.3f}, '
                               f'{selected_button["position"][1]:.3f}, '
                               f'{selected_button["position"][2]:.3f})')
         
-        # 计算目标位置和姿态
-        target_pose = self.calculate_target_pose(selected_button)
-        if target_pose is not None:
-            self.current_target_pose = target_pose
-            self.publish_target_visualization()
-            self.publish_target_pose()
+        # 只有在目标位置未固定时才重新计算
+        if not self.is_target_position_fixed:
+            # 计算目标位置和姿态
+            target_pose = self.calculate_target_pose(selected_button)
+            if target_pose is not None:
+                # 使用深拷贝固定这个目标位置，确保30秒内数据完全不变
+                self.fixed_target_pose = copy.deepcopy(target_pose)
+                self.current_target_pose = copy.deepcopy(target_pose)
+                self.is_target_position_fixed = True
+                
+                self.get_logger().info(f'固定目标位置: ({target_pose["position"][0]:.3f}, '
+                                      f'{target_pose["position"][1]:.3f}, '
+                                      f'{target_pose["position"][2]:.3f})')
+                self.get_logger().info(f'开始持续发布30秒，发布频率: 10Hz - 数据内容将保持完全一致')
+                
+                # 立即发布一次可视化和目标位置
+                self.publish_target_visualization()
+                self.publish_target_pose()
+        else:
+            # 如果目标位置已经固定，不进行任何计算和更新，保持数据完全一致
+            self.get_logger().debug('目标位置已固定，保持数据一致性，不进行重新计算')
 
     def select_target_button(self, button_positions):
         """选择目标按钮"""
@@ -325,8 +450,8 @@ class ButtonTargetPlanner(Node):
         else:
             target_position = target_position_in_cloud_frame
         
-        # 计算目标姿态（使z轴与法向量对齐）
-        target_orientation = self.calculate_orientation_from_normal(plane_normal)
+        # 计算目标姿态（让z轴从目标位置指向按钮，x轴在按钮平面内）
+        target_orientation = self.calculate_orientation_from_normal(plane_normal, target_position, button_position)
         
         self.get_logger().info(f'计算目标位置: ({target_position[0]:.3f}, {target_position[1]:.3f}, {target_position[2]:.3f})')
         self.get_logger().info(f'平面法向量: ({plane_normal[0]:.3f}, {plane_normal[1]:.3f}, {plane_normal[2]:.3f})')
@@ -424,39 +549,92 @@ class ButtonTargetPlanner(Node):
             self.get_logger().error(f'平面拟合失败: {e}')
             return None
 
-    def calculate_orientation_from_normal(self, normal):
-        """根据法向量计算四元数姿态"""
-        # 目标：让机械臂的z轴（工具方向）与法向量对齐
+    def calculate_orientation_from_normal(self, normal, target_position, button_position):
+        """根据法向量和目标-按钮方向计算四元数姿态
         
-        # 默认的z轴方向
-        z_axis = np.array([0, 0, 1])
+        Args:
+            normal: 平面法向量 (参考方向)
+            target_position: 目标位置
+            button_position: 按钮位置
+            
+        Returns:
+            四元数 [x, y, z, w]，其中:
+            - z轴从目标位置指向按钮位置
+            - x轴在平面内垂直于z轴
+            - y轴由右手法则确定
+        """
         
-        # 如果法向量已经与z轴对齐，返回单位四元数
-        if np.allclose(normal, z_axis, atol=1e-6):
-            return np.array([0, 0, 0, 1])  # 无旋转
-        elif np.allclose(normal, -z_axis, atol=1e-6):
-            return np.array([1, 0, 0, 0])  # 180度绕x轴旋转
+        # z轴：从目标位置指向按钮位置
+        z_axis = button_position - target_position
+        z_axis = z_axis / np.linalg.norm(z_axis)
         
-        # 计算旋转轴（叉积）
-        rotation_axis = np.cross(z_axis, normal)
-        rotation_axis = rotation_axis / np.linalg.norm(rotation_axis)
+        # 确保法向量归一化
+        normal = normal / np.linalg.norm(normal)
         
-        # 计算旋转角度
-        cos_angle = np.dot(z_axis, normal)
-        angle = np.arccos(np.clip(cos_angle, -1.0, 1.0))
+        # x轴：在垂直于z轴的平面内，优先选择与法向量垂直的方向
+        # 使用法向量与z轴的叉积来构造x轴
+        x_direction = np.cross(normal, z_axis)
+        x_axis_norm = np.linalg.norm(x_direction)
         
-        # 手动创建四元数 (使用轴角表示)
-        sin_half_angle = np.sin(angle / 2)
-        cos_half_angle = np.cos(angle / 2)
+        if x_axis_norm < 1e-6:
+            # 如果法向量与z轴平行，选择一个垂直的方向作为x轴
+            if abs(z_axis[0]) < 0.9:
+                x_axis = np.array([1.0, 0.0, 0.0])
+            else:
+                x_axis = np.array([0.0, 1.0, 0.0])
+            # 确保x轴与z轴垂直
+            dot_product = np.dot(x_axis, z_axis)
+            x_axis = x_axis - dot_product * z_axis
+            x_axis = x_axis / np.linalg.norm(x_axis)
+        else:
+            x_axis = x_direction / x_axis_norm
         
-        quat = np.array([
-            rotation_axis[0] * sin_half_angle,  # x
-            rotation_axis[1] * sin_half_angle,  # y  
-            rotation_axis[2] * sin_half_angle,  # z
-            cos_half_angle                      # w
-        ])
+        # y轴：由右手法则确定 (z × x = y)
+        y_axis = np.cross(z_axis, x_axis)
+        y_axis = y_axis / np.linalg.norm(y_axis)
+        
+        # 构建旋转矩阵
+        rotation_matrix = np.column_stack([x_axis, y_axis, z_axis])
+        
+        # 将旋转矩阵转换为四元数
+        quat = self.rotation_matrix_to_quaternion(rotation_matrix)
+        
+        self.get_logger().info(f'目标姿态 - X轴: ({x_axis[0]:.3f}, {x_axis[1]:.3f}, {x_axis[2]:.3f})')
+        self.get_logger().info(f'目标姿态 - Y轴: ({y_axis[0]:.3f}, {y_axis[1]:.3f}, {y_axis[2]:.3f})')
+        self.get_logger().info(f'目标姿态 - Z轴(指向按钮): ({z_axis[0]:.3f}, {z_axis[1]:.3f}, {z_axis[2]:.3f})')
         
         return quat
+
+    def rotation_matrix_to_quaternion(self, R):
+        """将旋转矩阵转换为四元数 [x, y, z, w]"""
+        trace = R[0, 0] + R[1, 1] + R[2, 2]
+        
+        if trace > 0:
+            s = np.sqrt(trace + 1.0) * 2  # s = 4 * qw
+            qw = 0.25 * s
+            qx = (R[2, 1] - R[1, 2]) / s
+            qy = (R[0, 2] - R[2, 0]) / s
+            qz = (R[1, 0] - R[0, 1]) / s
+        elif R[0, 0] > R[1, 1] and R[0, 0] > R[2, 2]:
+            s = np.sqrt(1.0 + R[0, 0] - R[1, 1] - R[2, 2]) * 2  # s = 4 * qx
+            qw = (R[2, 1] - R[1, 2]) / s
+            qx = 0.25 * s
+            qy = (R[0, 1] + R[1, 0]) / s
+            qz = (R[0, 2] + R[2, 0]) / s
+        elif R[1, 1] > R[2, 2]:
+            s = np.sqrt(1.0 + R[1, 1] - R[0, 0] - R[2, 2]) * 2  # s = 4 * qy
+            qw = (R[0, 2] - R[2, 0]) / s
+            qx = (R[0, 1] + R[1, 0]) / s
+            qy = 0.25 * s
+            qz = (R[1, 2] + R[2, 1]) / s
+        else:
+            s = np.sqrt(1.0 + R[2, 2] - R[0, 0] - R[1, 1]) * 2  # s = 4 * qz
+            qw = (R[1, 0] - R[0, 1]) / s
+            qx = (R[0, 2] + R[2, 0]) / s
+            qy = (R[1, 2] + R[2, 1]) / s
+            qz = 0.25 * s
+        
+        return np.array([qx, qy, qz, qw])
 
     def publish_target_visualization(self):
         """发布目标位置可视化"""
@@ -651,7 +829,8 @@ class ButtonTargetPlanner(Node):
         pose_stamped.pose.orientation.w = float(target_quat[3])
         
         self.target_pose_publisher.publish(pose_stamped)
-        self.get_logger().debug('发布目标姿态')
+        # 降低日志级别，避免过多输出
+        # self.get_logger().debug('发布目标姿态')
 
 
 def main(args=None):

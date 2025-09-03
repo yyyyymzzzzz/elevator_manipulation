@@ -16,7 +16,7 @@ class TrajectoryController(Node):
     def __init__(self):
         super().__init__('jaka_arm_controller')
         
-        # 动作服务器 - 接收MoveIt的轨迹执行请求
+        # Arm动作服务器 - 接收MoveIt的轨迹执行请求
         self._action_server = ActionServer(
             self,
             FollowJointTrajectory,
@@ -264,18 +264,18 @@ class TrajectoryController(Node):
                     self.get_logger().info('轨迹执行被取消')
                     break
                 
-                # 计算当前点的预期执行时间
-                if i == 0:
-                    target_time = 0.0
-                else:
-                    target_time = i * time_per_point
+                # # 计算当前点的预期执行时间
+                # if i == 0:
+                #     target_time = 0.0
+                # else:
+                #     target_time = i * time_per_point
                 
-                # 等待到达目标时间
-                elapsed_time = time.time() - start_time
-                if elapsed_time < target_time:
-                    sleep_time = target_time - elapsed_time
-                    if sleep_time > 0:
-                        time.sleep(sleep_time)
+                # # 等待到达目标时间
+                # elapsed_time = time.time() - start_time
+                # if elapsed_time < target_time:
+                #     sleep_time = target_time - elapsed_time
+                #     if sleep_time > 0:
+                #         time.sleep(sleep_time)
                 
                 # 重新排列关节位置以匹配我们的关节顺序
                 joint_positions = [0.0] * 6
