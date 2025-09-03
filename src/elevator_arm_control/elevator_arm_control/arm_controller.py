@@ -310,10 +310,10 @@ class ArmController(Node):
             
             if self.arm_connected and self.arm_enabled:
                 # 使用改进的关节位置获取方法，带重试机制
-                arm_positions = self.get_current_joint_positions()
+                urdf_positions = self.get_current_joint_positions()
                 
                 # 转换实际机器人角度到URDF坐标系角度
-                urdf_positions = self.convert_robot_to_urdf_angles(arm_positions)
+                # urdf_positions = self.convert_robot_to_urdf_angles(arm_positions)
                 
                 # 更新完整关节列表中的对应部分
                 for i in range(6):
@@ -467,47 +467,49 @@ class ArmController(Node):
         
         return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
-    def convert_robot_to_urdf_angles(self, robot_angles):
-        if len(robot_angles) != 6:
-            self.get_logger().error(f"期望6个关节角度，但收到{len(robot_angles)}个")
-            return [0.0] * 6
+    # def convert_robot_to_urdf_angles(self, robot_angles):
+    #     if len(robot_angles) != 6:
+    #         self.get_logger().error(f"期望6个关节角度，但收到{len(robot_angles)}个")
+    #         return [0.0] * 6
         
-        urdf_angles = [0.0] * 6
+    #     urdf_angles = [0.0] * 6
         
-        # 基于URDF中的rpy偏移调整关节角度
-        # 这些偏移量根据URDF定义计算得出
+    #     # 基于URDF中的rpy偏移调整关节角度
+    #     # 这些偏移量根据URDF定义计算得出
         
-        # l_a1: 有180°和90°的旋转偏移，可能需要反向旋转
-        urdf_angles[0] = robot_angles[0]  
-        urdf_angles[1] = robot_angles[1]  
-        urdf_angles[2] = robot_angles[2]
-        urdf_angles[3] = robot_angles[3] - math.pi 
-        urdf_angles[4] = robot_angles[4] 
-        urdf_angles[5] = robot_angles[5]  
-        self.get_logger().debug(f"关节角度转换: 机器人 {[f'{j:.3f}' for j in robot_angles]} -> URDF {[f'{j:.3f}' for j in urdf_angles]}")
-        return urdf_angles
+    #     # l_a1: 有180°和90°的旋转偏移，可能需要反向旋转
+    #     urdf_angles[0] = robot_angles[0]  
+    #     urdf_angles[1] = robot_angles[1]  
+    #     urdf_angles[2] = robot_angles[2]
+    #     # urdf_angles[3] = robot_angles[3] - math.pi 
+    #     urdf_angles[3] = robot_angles[3]
+    #     urdf_angles[4] = robot_angles[4] 
+    #     urdf_angles[5] = robot_angles[5]  
+    #     self.get_logger().debug(f"关节角度转换: 机器人 {[f'{j:.3f}' for j in robot_angles]} -> URDF {[f'{j:.3f}' for j in urdf_angles]}")
+    #     return urdf_angles
 
-    def convert_urdf_to_robot_angles(self, urdf_angles):
-        """
-        将URDF坐标系中的角度转换为实际机器人的关节角度
-        这是convert_robot_to_urdf_angles的逆变换
-        """
-        if len(urdf_angles) != 6:
-            self.get_logger().error(f"期望6个关节角度，但收到{len(urdf_angles)}个")
-            return [0.0] * 6
+    # def convert_urdf_to_robot_angles(self, urdf_angles):
+    #     """
+    #     将URDF坐标系中的角度转换为实际机器人的关节角度
+    #     这是convert_robot_to_urdf_angles的逆变换
+    #     """
+    #     if len(urdf_angles) != 6:
+    #         self.get_logger().error(f"期望6个关节角度，但收到{len(urdf_angles)}个")
+    #         return [0.0] * 6
         
-        robot_angles = [0.0] * 6
+    #     robot_angles = [0.0] * 6
         
-        # 应用与convert_robot_to_urdf_angles相反的变换
-        robot_angles[0] = urdf_angles[0] 
-        robot_angles[1] = urdf_angles[1]  
-        robot_angles[2] = urdf_angles[2]   
-        robot_angles[3] = urdf_angles[3] + math.pi  # l_a4 + pi
-        robot_angles[4] = urdf_angles[4]  
-        robot_angles[5] = urdf_angles[5]  
+    #     # 应用与convert_robot_to_urdf_angles相反的变换
+    #     robot_angles[0] = urdf_angles[0] 
+    #     robot_angles[1] = urdf_angles[1]  
+    #     robot_angles[2] = urdf_angles[2]   
+    #     # robot_angles[3] = urdf_angles[3] + math.pi  # l_a4 + pi
+    #     robot_angles[3] = urdf_angles[3]
+    #     robot_angles[4] = urdf_angles[4]  
+    #     robot_angles[5] = urdf_angles[5]  
         
-        self.get_logger().debug(f"关节角度逆转换: URDF {[f'{j:.3f}' for j in urdf_angles]} -> 机器人 {[f'{j:.3f}' for j in robot_angles]}")
-        return robot_angles
+    #     self.get_logger().debug(f"关节角度逆转换: URDF {[f'{j:.3f}' for j in urdf_angles]} -> 机器人 {[f'{j:.3f}' for j in robot_angles]}")
+    #     return robot_angles
 
     def _apply_position_stability_filter(self, current_pos):
         """应用位置稳定性过滤"""
@@ -586,11 +588,11 @@ class ArmController(Node):
             return
         
         # 检查是否与上次命令相同，避免重复执行
-        urdf_joint_positions = list(msg.data)
+        robot_joint_positions = list(msg.data)
         current_time = time.time()
         
         # 将URDF坐标系的角度转换为实际机器人的角度
-        robot_joint_positions = self.convert_urdf_to_robot_angles(urdf_joint_positions)
+        # robot_joint_positions = self.convert_urdf_to_robot_angles(urdf_joint_positions)
         
         # 如果变化很小且时间间隔很短，跳过这次命令
         # max_diff = max(abs(robot_joint_positions[i] - self.last_joint_command[i]) for i in range(6))

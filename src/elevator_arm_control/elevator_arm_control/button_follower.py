@@ -79,7 +79,7 @@ class ButtonFollower(Node):
         self.position_check_start_time = None
 
         # 定义Home位置的关节角度 
-        self.home_joint_angles = [-1.0*math.pi/2.0, 0.0, math.pi/2.0, 0.0, 0.0, 0.0]
+        self.home_joint_angles = [-1.0*math.pi/2.0, math.pi/2.0, math.pi/2.0, 0.0, 0.0, 0.0]
         self.joint_names = ['l_a1', 'l_a2', 'l_a3', 'l_a4', 'l_a5', 'l_a6']
 
         # 目标接收冷却时间控制
@@ -212,7 +212,7 @@ class ButtonFollower(Node):
         position_constraint.link_name = "link_a6"
         bounding_box = SolidPrimitive()
         bounding_box.type = SolidPrimitive.BOX
-        bounding_box.dimensions = [0.01, 0.01, 0.02] 
+        bounding_box.dimensions = [0.001, 0.001, 0.001] 
         position_constraint.constraint_region.primitives.append(bounding_box)
         position_constraint.constraint_region.primitive_poses.append(goal_pose.pose)
         position_constraint.weight = 1.0
@@ -222,9 +222,9 @@ class ButtonFollower(Node):
         orientation_constraint.header.frame_id = goal_pose.header.frame_id
         orientation_constraint.link_name = "link_a6"
         orientation_constraint.orientation = goal_pose.pose.orientation
-        orientation_constraint.absolute_x_axis_tolerance = 0.03 
-        orientation_constraint.absolute_y_axis_tolerance = 0.03 
-        orientation_constraint.absolute_z_axis_tolerance = 3.0
+        orientation_constraint.absolute_x_axis_tolerance = 0.01 
+        orientation_constraint.absolute_y_axis_tolerance = 0.01 
+        orientation_constraint.absolute_z_axis_tolerance = 0.01
         orientation_constraint.weight = 2.0
         constraints.orientation_constraints.append(orientation_constraint)
         
