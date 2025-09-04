@@ -19,4 +19,4 @@ jaka_arm_controller:
     # 优化后最大保留的轨迹点数量
     # 如果原始轨迹点数超过此值，将使用等间隔采样
     # 推荐范围: 3 - 8 (减少更多中间点)
-    max_trajectory_points: 3
+    max_trajectory_points: 1
