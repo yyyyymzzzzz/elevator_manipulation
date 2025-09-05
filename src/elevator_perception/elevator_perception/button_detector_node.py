@@ -422,10 +422,18 @@ class ButtonDetector(Node):
         # 应用非极大值抑制去除重复检测
         filtered_detections = self.apply_nms(all_detections, iou_threshold=0.3)  # 降低IoU阈值，减少误删
         
-        # 应用置信度稳定化
-        stabilized_detections = self.stabilize_detections(filtered_detections)
+        # 步骤2：合并相邻的【相同类别】检测框
+        merged_detections = self.merge_adjacent_boxes(filtered_detections)
+        
+        # 新增步骤3：对相邻的【不同类别】的模糊对进行重新识别
+        re_detected_detections = self.re_detect_ambiguous_pairs(merged_detections, img, window_w, window_h)
+        
+        # 步骤4：应用置信度稳定化
+        stabilized_detections = self.stabilize_detections(re_detected_detections)
         
         self.get_logger().debug(f'Total detections after NMS: {len(filtered_detections)}')
+        self.get_logger().debug(f'Total detections after merging: {len(merged_detections)}')
+        self.get_logger().debug(f'Total detections after re-detection: {len(re_detected_detections)}') 
         self.get_logger().debug(f'Total detections after stabilization: {len(stabilized_detections)}')
         
         return stabilized_detections
@@ -472,6 +480,206 @@ class ButtonDetector(Node):
         filtered = sorted(filtered, key=lambda x: x['conf'], reverse=True)
         
         return filtered
+
+    def merge_adjacent_boxes(self, detections, max_gap_ratio=0.55, min_overlap_ratio=0.15):
+        """
+        合并相邻且属于同一类别的检测框。
+        主要用于解决滑动窗口导致的单个目标被分割成多个部分的问题。
+        """
+        import numpy as np
+
+        if len(detections) < 2:
+            return detections
+
+        while True:
+            merged_something = False
+            i = 0
+            while i < len(detections):
+                j = i + 1
+                while j < len(detections):
+                    det1 = detections[i]
+                    det2 = detections[j]
+
+                    # 检查是否可以合并
+                    can_merge = False
+                    if det1['cls'] == det2['cls']:
+                        # 获取坐标和尺寸
+                        xyxy1 = det1['xyxy']
+                        xyxy2 = det2['xyxy']
+                        x1_1, y1_1, x2_1, y2_1 = xyxy1
+                        x1_2, y1_2, x2_2, y2_2 = xyxy2
+                        w1, h1 = x2_1 - x1_1, y2_1 - y1_1
+                        w2, h2 = x2_2 - x1_2, y2_2 - y1_2
+
+                        # 计算水平间距和垂直重叠率
+                        horizontal_gap = max(0, max(x1_1, x1_2) - min(x2_1, x2_2))
+                        vertical_overlap = max(0, min(y2_1, y2_2) - max(y1_1, y1_2))
+                        vertical_overlap_ratio = vertical_overlap / min(h1, h2) if min(h1, h2) > 0 else 0
+                        
+                        # 合并条件：垂直重叠度足够高，且水平间距足够小
+                        if (vertical_overlap_ratio > min_overlap_ratio and 
+                            horizontal_gap < min(w1, w2) * max_gap_ratio):
+                            can_merge = True
+
+                    if can_merge:
+                        # 合并框
+                        new_x1 = min(x1_1, x1_2)
+                        new_y1 = min(y1_1, y1_2)
+                        new_x2 = max(x2_1, x2_2)
+                        new_y2 = max(y2_1, y2_2)
+                        
+                        # 创建新的合并后的检测结果
+                        merged_detection = {
+                            'xyxy': np.array([new_x1, new_y1, new_x2, new_y2]),
+                            'conf': max(det1['conf'], det2['conf']),
+                            'cls': det1['cls'],
+                            'names': det1['names'],
+                            'window_pos': det1.get('window_pos', (0,0))
+                        }
+                        
+                        # 移除旧的框，添加新的合并框
+                        detections.pop(j)
+                        detections.pop(i)
+                        detections.append(merged_detection)
+                        
+                        merged_something = True
+                        break # 跳出内层 j 循环，重新开始扫描
+                    
+                    # *** BUG修复：确保 j 总是递增 ***
+                    j += 1
+                
+                if merged_something:
+                    break # 跳出外层 i 循环，从头开始
+                
+                i += 1
+            
+            if not merged_something:
+                break
+
+        return detections
+
+    def re_detect_ambiguous_pairs(self, detections, original_image, window_w, window_h):
+        """
+        寻找相邻的不同类别检测框。
+        对该区域创建一个与初次识别相同大小的窗口进行重新识别，以消除歧义。
+        """
+        import numpy as np
+
+        if len(detections) < 2:
+            return detections
+
+        adjacency_iou_threshold = 0.05
+
+        while True:
+            re_detected_something = False
+            i = 0
+            while i < len(detections):
+                j = i + 1
+                while j < len(detections):
+                    det1 = detections[i]
+                    det2 = detections[j]
+
+                    if det1['cls'] == det2['cls']:
+                        j += 1
+                        continue
+
+                    xyxy1 = det1['xyxy']
+                    xyxy2 = det2['xyxy']
+                    
+                    union_x1 = min(xyxy1[0], xyxy2[0])
+                    union_y1 = min(xyxy1[1], xyxy2[1])
+                    union_x2 = max(xyxy1[2], xyxy2[2])
+                    union_y2 = max(xyxy1[3], xyxy2[3])
+                    
+                    area1 = (xyxy1[2] - xyxy1[0]) * (xyxy1[3] - xyxy1[1])
+                    area2 = (xyxy2[2] - xyxy2[0]) * (xyxy2[3] - xyxy2[1])
+                    union_area = (union_x2 - union_x1) * (union_y2 - union_y1)
+                    
+                    if union_area > 0 and (area1 + area2 - self.calculate_iou(xyxy1, xyxy2) * union_area) / union_area < (1 - adjacency_iou_threshold):
+                        j += 1
+                        continue
+
+                    self.get_logger().info(f"Ambiguous pair found. Re-detecting with standard window size.")
+                    
+                    # 1. 计算标准尺寸ROI的新位置
+                    h, w = original_image.shape[:2]
+                    
+                    # 计算两个模糊框合并后的中心点
+                    center_x = (union_x1 + union_x2) / 2
+                    center_y = (union_y1 + union_y2) / 2
+                    
+                    # 以该中心点为中心，计算标准尺寸窗口的坐标
+                    roi_x1 = int(center_x - window_w / 2)
+                    roi_y1 = int(center_y - window_h / 2)
+                    roi_x2 = int(roi_x1 + window_w)
+                    roi_y2 = int(roi_y1 + window_h)
+                    
+                    # 2. 修正ROI，确保它不超出画面边界
+                    # 如果左边越界，将整个框向右移动
+                    if roi_x1 < 0:
+                        roi_x2 -= roi_x1  # roi_x2 = roi_x2 + (-roi_x1)
+                        roi_x1 = 0
+                    # 如果右边越界，将整个框向左移动
+                    if roi_x2 > w:
+                        roi_x1 -= (roi_x2 - w)
+                        roi_x2 = w
+                    # 如果上边越界，将整个框向下移动
+                    if roi_y1 < 0:
+                        roi_y2 -= roi_y1
+                        roi_y1 = 0
+                    # 如果下边越界，将整个框向上移动
+                    if roi_y2 > h:
+                        roi_y1 -= (roi_y2 - h)
+                        roi_y2 = h
+
+                    # 3. 裁剪图像并进行推理
+                    roi_image = original_image[roi_y1:roi_y2, roi_x1:roi_x2]
+                    
+                    if roi_image.size == 0 or roi_image.shape[0] != window_h or roi_image.shape[1] != window_w:
+                        self.get_logger().warn(f"Re-detection ROI is not standard size after boundary correction. Skipping.")
+                        j += 1
+                        continue
+
+                    results = self.model(roi_image)
+                    
+                    # 4. 处理新结果并替换旧结果
+                    new_detections = []
+                    if results[0].boxes is not None:
+                        for box in results[0].boxes:
+                            conf = float(box.conf)
+                            if conf > self.confidence_threshold:
+                                xyxy_roi = box.xyxy[0].cpu().numpy().copy()
+                                
+                                xyxy_original = [
+                                    xyxy_roi[0] + roi_x1,
+                                    xyxy_roi[1] + roi_y1,
+                                    xyxy_roi[2] + roi_x1,
+                                    xyxy_roi[3] + roi_y1
+                                ]
+                                
+                                new_detections.append({
+                                    'xyxy': np.array(xyxy_original),
+                                    'conf': conf,
+                                    'cls': int(box.cls),
+                                    'names': results[0].names
+                                })
+
+                    detections.pop(j)
+                    detections.pop(i)
+                    detections.extend(new_detections)
+                    
+                    re_detected_something = True
+                    break
+                
+                if re_detected_something:
+                    break
+                
+                i += 1
+            
+            if not re_detected_something:
+                break
+
+        return detections
     
     def stabilize_detections(self, current_detections):
         """使用历史检测结果稳定置信度"""
