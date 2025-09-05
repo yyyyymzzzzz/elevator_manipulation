@@ -25,6 +25,7 @@ from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray
 from std_srvs.srv import SetBool
 from visualization_msgs.msg import Marker
+from std_msgs.msg import String
 
 import tf2_ros
 from tf2_geometry_msgs import do_transform_pose_stamped
@@ -52,6 +53,9 @@ class ButtonFollower(Node):
             '/button_target_pose',
             self.target_pose_callback,
             10)
+        
+        # +++ 添加一个Publisher，用于在按压完成后通知planner
+        self.press_completion_publisher = self.create_publisher(String, '/button_press/completed', 10)
         
         # 当前末端执行器位置订阅者
         self.current_joint_state = None
@@ -366,7 +370,7 @@ class ButtonFollower(Node):
         position_constraint.link_name = "link_a6"
         bounding_box = SolidPrimitive()
         bounding_box.type = SolidPrimitive.BOX
-        bounding_box.dimensions = [0.001, 0.001, 0.001] 
+        bounding_box.dimensions = [0.01, 0.01, 0.01] 
         position_constraint.constraint_region.primitives.append(bounding_box)
         position_constraint.constraint_region.primitive_poses.append(goal_pose.pose)
         position_constraint.weight = 1.0
@@ -376,8 +380,8 @@ class ButtonFollower(Node):
         orientation_constraint.header.frame_id = goal_pose.header.frame_id
         orientation_constraint.link_name = "link_a6"
         orientation_constraint.orientation = goal_pose.pose.orientation
-        orientation_constraint.absolute_x_axis_tolerance = 0.01 
-        orientation_constraint.absolute_y_axis_tolerance = 0.01 
+        orientation_constraint.absolute_x_axis_tolerance = 0.05 
+        orientation_constraint.absolute_y_axis_tolerance = 0.05 
         orientation_constraint.absolute_z_axis_tolerance = 3.14
         orientation_constraint.weight = 2.0
         constraints.orientation_constraints.append(orientation_constraint)
@@ -438,7 +442,7 @@ class ButtonFollower(Node):
         bounding_box = SolidPrimitive()
         bounding_box.type = SolidPrimitive.BOX
         # 按压动作使用更宽松的约束，确保成功率
-        bounding_box.dimensions = [0.01, 0.01, 0.01]  # 5cm的容忍范围
+        bounding_box.dimensions = [0.02, 0.02, 0.02]  # 5cm的容忍范围
         position_constraint.constraint_region.primitives.append(bounding_box)
         position_constraint.constraint_region.primitive_poses.append(self.current_press_pose.pose)
         position_constraint.weight = 1.0
@@ -449,8 +453,8 @@ class ButtonFollower(Node):
         orientation_constraint.link_name = "link_a6"
         orientation_constraint.orientation = self.current_press_pose.pose.orientation
         # 保持与target相同的方向约束权重，确保一致性
-        orientation_constraint.absolute_x_axis_tolerance = 0.05
-        orientation_constraint.absolute_y_axis_tolerance = 0.05
+        orientation_constraint.absolute_x_axis_tolerance = 0.1
+        orientation_constraint.absolute_y_axis_tolerance = 0.1
         orientation_constraint.absolute_z_axis_tolerance = 6.28
         orientation_constraint.weight = 2.0  # 与target保持一致
         constraints.orientation_constraints.append(orientation_constraint)
@@ -704,7 +708,7 @@ class ButtonFollower(Node):
         self.get_logger().info(f"Trajectory execution {step_name} successful!")
         self.get_logger().info(f"Current step completed: {self.current_step}")
 
-        # === 【核心修改】创建定时器前先取消旧的 ===
+        # 创建定时器前先取消旧的 
         if self.pause_timer is not None and not self.pause_timer.cancelled:
             self.get_logger().warn("Cancelling a pre-existing timer.")
             self.pause_timer.cancel()
@@ -939,7 +943,7 @@ class ButtonFollower(Node):
         self.get_logger().info("Robot settled at HOME position. Starting 10-second pause...")
         self.current_step = "pausing_at_home"
         # 创建真正的pause计时器
-        self.pause_timer = self.create_timer(5.0, self.create_one_shot_callback(self.finish_cycle_step))
+        self.pause_timer = self.create_timer(0.5, self.create_one_shot_callback(self.finish_cycle_step))
         self.get_logger().info("Home pause timer created (5 seconds)")
 
     def proceed_to_press_step(self):
@@ -1066,6 +1070,12 @@ class ButtonFollower(Node):
             
         self.get_logger().info("STEP 5 COMPLETED: 5-second home pause completed. Full cycle complete.")
         self.get_logger().info("=== CYCLE FINISHED SUCCESSFULLY ===")
+
+        self.get_logger().info("Publishing success signal for button planner to switch target.")
+        completion_msg = String()
+        completion_msg.data = "success"
+        self.press_completion_publisher.publish(completion_msg)
+
         self.reset_state()
 
     def reset_state(self):
