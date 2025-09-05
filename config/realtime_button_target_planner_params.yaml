@@ -1,0 +1,35 @@
+# 实时按钮目标位置规划器配置参数
+
+realtime_button_target_planner:
+  ros__parameters:
+    # 目标位置计算参数
+    target_distance: 0.15          # 目标位置距按钮的距离 (m)
+    use_fixed_normal: true         # 是否使用固定法向量（避免复杂的点云计算）
+    fixed_normal_x: 0.0            # 固定法向量 X 分量（垂直墙面向外）
+    fixed_normal_y: 1.0            # 固定法向量 Y 分量  
+    fixed_normal_z: 0.0           # 固定法向量 Z 分量（负值表示向相机方向，即墙面向外）
+    
+    # 坐标系配置
+    target_frame: "world"
+    camera_frame: "camera_color_optical_frame"
+    
+    # 可视化参数
+    marker_scale: 0.02
+    marker_lifetime: 0.5           # 较短的标记生命周期以提高响应性
+    
+    # 实时性优化参数
+    enable_smoothing: false        # 位置平滑已禁用，直接使用检测位置
+    smoothing_alpha: 0.3           # 平滑系数 (已禁用)
+    max_position_change: 0.05      # 最大位置变化阈值 (已禁用)
+    publish_frequency: 30.0        # 发布频率 (Hz) - 高频发布
+    
+    # 按钮选择方法: 'sequential' | 'all' | 'closest'
+    # sequential: 顺序切换发布每个按钮
+    # all: 同时发布所有按钮的目标位置JSON
+    # closest: 只发布最近的按钮目标位置
+    button_selection_method: "sequential"
+    sequential_duration: 20.0      # 顺序模式下每个按钮的持续时间 (s)
+    
+    # 目标清理参数 - 解决按钮长时间未检测到时目标残留的问题
+    target_cleanup_interval: 2.0   # 清理检查间隔 (s)
+    target_expiry_time: 5.0        # 目标过期时间 (s) - 按钮未检测到超过此时间将被清理

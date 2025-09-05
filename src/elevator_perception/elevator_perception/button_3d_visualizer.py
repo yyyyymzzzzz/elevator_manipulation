@@ -339,6 +339,9 @@ class Button3DVisualizer(Node):
             marker.type = Marker.SPHERE
             marker.action = Marker.ADD
             
+            # 将类别名称存储在text字段中，供目标规划器使用
+            marker.text = detection['class']  # 保存按钮类别名称
+            
             # 设置位置
             marker.pose.position.x = float(final_point[0])
             marker.pose.position.y = float(final_point[1]) 
