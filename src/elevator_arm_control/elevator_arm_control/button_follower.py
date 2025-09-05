@@ -69,6 +69,7 @@ class ButtonFollower(Node):
         self.is_going_home = False
         self.current_goal_pose = None
         self.current_press_pose = None  # 按压位置
+        self.target_joint_state = None  # 保存到达target时的关节状态
         self.current_step = "idle" 
         self.trajectory_completed = False  
         
@@ -77,14 +78,14 @@ class ButtonFollower(Node):
         
         # 位置检查相关参数
         self.position_tolerance = 0.02  # 位置容忍度 (米) - 2cm，更严格
-        self.press_position_tolerance = 0.02  # 按压位置容忍度 (米) - 保持一致
+        self.press_position_tolerance = 0.05  # 按压位置容忍度 (米) - 保持一致
         self.orientation_tolerance = 0.2  # 方向容忍度 (弧度) - 减小
-        self.press_orientation_tolerance = 0.2  # 按压方向容忍度 (弧度) - 保持一致
+        self.press_orientation_tolerance = 0.4  # 按压方向容忍度 (弧度) - 保持一致
         self.max_position_check_time = 20.0  # 最大位置检查时间 (秒)
         self.position_check_start_time = None
         
         # 位置检查的最小等待时间（确保机器人真正稳定）
-        self.min_settle_time = 1.0  # 至少等待1秒再开始检查
+        self.min_settle_time = 3.0  # 至少等待3秒再开始检查，确保轨迹执行完成
         
         # 按压相关参数
         self.press_distance = 0.03  # 按压距离：3cm
@@ -97,7 +98,11 @@ class ButtonFollower(Node):
         self.min_goal_interval = 10.0
         self.last_goal_time = None
         
-        self.get_logger().info("Button Follower Node is ready for 'Home -> Target -> Press -> Target -> Home' cycle.")
+        # 等待关节状态初始化
+        self.joint_state_ready = False
+        
+        self.get_logger().info("Button Follower Node initializing...")
+        self.get_logger().info("Waiting for joint state data before accepting targets...")
         self.get_logger().info(f"Home position set to: {self.home_joint_angles}")
         self.get_logger().info(f"Press distance: {self.press_distance}m")
         self.get_logger().info(f"Minimum goal interval: {self.min_goal_interval} seconds")
@@ -147,6 +152,12 @@ class ButtonFollower(Node):
         # 只有当我们找到了所有需要的关节时，才更新可用于规划的状态
         if found_joints == len(self.joint_names):
             self.filtered_joint_state = temp_joint_state
+            
+            # 如果这是第一次接收到完整的关节状态，标记为ready
+            if not self.joint_state_ready:
+                self.joint_state_ready = True
+                self.get_logger().info("✓ Joint state data received - Button Follower Node is now ready for targets!")
+                self.get_logger().info("Ready for 'Home -> Target -> Press -> Target -> Home' cycle.")
         else:
             # 如果在某些消息中关节不全，清除旧的过滤状态以防止使用过时数据
             self.filtered_joint_state = None
@@ -203,6 +214,37 @@ class ButtonFollower(Node):
         else:
             return False
 
+    def check_joint_angles_reached(self, target_joint_positions):
+        """检查机器人关节角度是否到达目标值"""
+        if self.filtered_joint_state is None:
+            self.get_logger().debug("No current joint state available for joint angle check")
+            return False
+        
+        if len(target_joint_positions) != len(self.filtered_joint_state.position):
+            self.get_logger().error(f"Joint position count mismatch: target={len(target_joint_positions)}, current={len(self.filtered_joint_state.position)}")
+            return False
+        
+        # 计算关节角度误差
+        joint_tolerance = 0.05  # 约3度的容忍度
+        max_error = 0.0
+        all_joints_ok = True
+        
+        for i, (target_pos, current_pos) in enumerate(zip(target_joint_positions, self.filtered_joint_state.position)):
+            error = abs(target_pos - current_pos)
+            max_error = max(max_error, error)
+            joint_ok = error < joint_tolerance
+            if not joint_ok:
+                all_joints_ok = False
+            
+            self.get_logger().debug(f"Joint {i}: target={target_pos:.3f}, current={current_pos:.3f}, error={error:.3f}, OK={joint_ok}")
+        
+        if all_joints_ok:
+            self.get_logger().info(f"Target joint angles reached! Max error: {max_error:.4f} rad (tolerance: {joint_tolerance} rad)")
+            return True
+        else:
+            self.get_logger().debug(f"Joint angles not yet reached. Max error: {max_error:.4f} rad (tolerance: {joint_tolerance} rad)")
+            return False
+
     def calculate_press_pose(self, target_pose: PoseStamped):
         """根据目标位置计算按压位置（向前移动3cm）"""
         import copy
@@ -235,6 +277,11 @@ class ButtonFollower(Node):
 
     def target_pose_callback(self, msg: PoseStamped):
         current_time = self.get_clock().now()
+        
+        # 首先检查关节状态是否ready
+        if not self.joint_state_ready:
+            self.get_logger().warn("Joint state not ready yet, ignoring target. Please wait for initialization to complete.")
+            return
         
         # 严格检查当前状态
         if self.is_executing or self.current_step != "idle":
@@ -331,7 +378,7 @@ class ButtonFollower(Node):
         orientation_constraint.orientation = goal_pose.pose.orientation
         orientation_constraint.absolute_x_axis_tolerance = 0.01 
         orientation_constraint.absolute_y_axis_tolerance = 0.01 
-        orientation_constraint.absolute_z_axis_tolerance = 0.01
+        orientation_constraint.absolute_z_axis_tolerance = 3.14
         orientation_constraint.weight = 2.0
         constraints.orientation_constraints.append(orientation_constraint)
         
@@ -404,7 +451,7 @@ class ButtonFollower(Node):
         # 保持与target相同的方向约束权重，确保一致性
         orientation_constraint.absolute_x_axis_tolerance = 0.05
         orientation_constraint.absolute_y_axis_tolerance = 0.05
-        orientation_constraint.absolute_z_axis_tolerance = 0.05
+        orientation_constraint.absolute_z_axis_tolerance = 6.28
         orientation_constraint.weight = 2.0  # 与target保持一致
         constraints.orientation_constraints.append(orientation_constraint)
         
@@ -474,7 +521,7 @@ class ButtonFollower(Node):
         orientation_constraint.orientation = self.current_goal_pose.pose.orientation
         orientation_constraint.absolute_x_axis_tolerance = 0.05
         orientation_constraint.absolute_y_axis_tolerance = 0.05
-        orientation_constraint.absolute_z_axis_tolerance = 0.05
+        orientation_constraint.absolute_z_axis_tolerance = 3.14
         orientation_constraint.weight = 2.0
         constraints.orientation_constraints.append(orientation_constraint)
         
@@ -578,7 +625,7 @@ class ButtonFollower(Node):
 
     def execute_trajectory(self, robot_trajectory: RobotTrajectory):
         # 验证当前步骤状态
-        if self.current_step not in ["executing_to_target", "executing_to_press", "executing_to_target_return", "executing_to_home"]:
+        if self.current_step not in ["executing_to_target", "executing_to_press", "executing_to_target_return", "executing_direct_to_target_return", "executing_to_home"]:
             self.get_logger().error(f"execute_trajectory called in wrong step: {self.current_step}")
             self.reset_state()
             return
@@ -597,6 +644,8 @@ class ButtonFollower(Node):
             step_name = "to press"
         elif self.current_step == "executing_to_target_return":
             step_name = "to target return"
+        elif self.current_step == "executing_direct_to_target_return":
+            step_name = "direct to target return"
         elif self.current_step == "executing_to_home":
             step_name = "to home"
         else:
@@ -619,6 +668,8 @@ class ButtonFollower(Node):
             step_name = "to press"
         elif self.current_step == "executing_to_target_return":
             step_name = "to target return"
+        elif self.current_step == "executing_direct_to_target_return":
+            step_name = "direct to target return"
         elif self.current_step == "executing_to_home":
             step_name = "to home"
         else:
@@ -643,6 +694,8 @@ class ButtonFollower(Node):
             step_name = "to press"
         elif self.current_step == "executing_to_target_return":
             step_name = "to target return"
+        elif self.current_step == "executing_direct_to_target_return":
+            step_name = "direct to target return"
         elif self.current_step == "executing_to_home":
             step_name = "to home"
         else:
@@ -667,13 +720,12 @@ class ButtonFollower(Node):
             self.position_check_timer = self.create_timer(0.1, self.check_target_position_reached)  # 每100ms检查一次
             self.get_logger().info("Position check timer started")
         elif self.current_step == "executing_to_press":
-            self.current_step = "settling_at_press"
+            # 临时禁用press位置检测，直接进入pause阶段
+            self.current_step = "settling_at_press" 
             self.get_logger().info("STEP 2 COMPLETED: Trajectory to press finished")
-            self.get_logger().info("Checking if robot has reached press position...")
-            # 开始位置检查（按压位置）
-            self.position_check_start_time = self.get_clock().now()
-            self.position_check_timer = self.create_timer(0.1, self.check_press_position_reached)  # 每100ms检查一次
-            self.get_logger().info("Press position check timer started")
+            self.get_logger().info("TEMP DEBUG: Skipping press position check, going directly to pause...")
+            # 直接调用press pause，跳过位置检测
+            self.start_press_pause()
         elif self.current_step == "executing_to_target_return":
             self.current_step = "settling_at_target_return"
             self.get_logger().info("STEP 3 COMPLETED: Trajectory to target return finished")
@@ -682,6 +734,16 @@ class ButtonFollower(Node):
             self.position_check_start_time = self.get_clock().now()
             self.position_check_timer = self.create_timer(0.1, self.check_target_return_position_reached)  # 每100ms检查一次
             self.get_logger().info("Target return position check timer started")
+        elif self.current_step == "executing_direct_to_target_return":
+            # 对于直接返回target的情况，需要检查关节角度而不是笛卡尔位置
+            self.current_step = "settling_at_target_return"
+            self.get_logger().info("STEP 3 COMPLETED: Direct return to target finished")
+            self.get_logger().info("Checking if robot has reached target joint angles...")
+            # 对于直接返回，使用关节角度检查而不是笛卡尔位置检查
+            self.position_check_start_time = self.get_clock().now()
+            self.position_check_timer = self.create_timer(0.1, self.check_target_joint_angles_reached)
+            self.get_logger().info("Target joint angles check timer started")
+            return  # 直接返回，不进入其他分支
         elif self.current_step == "executing_to_home":
             self.current_step = "settling_at_home"
             self.get_logger().info("STEP 4 COMPLETED: Trajectory to home finished")
@@ -718,6 +780,13 @@ class ButtonFollower(Node):
         # 检查位置
         if self.check_position_reached(self.current_goal_pose):
             self.get_logger().info("Robot has reached TARGET position!")
+            # 保存当前的关节状态，用于后续从press位置快速返回
+            if self.filtered_joint_state is not None:
+                import copy
+                self.target_joint_state = copy.deepcopy(self.filtered_joint_state)
+                self.get_logger().info("Target joint state saved for quick return from press")
+            else:
+                self.get_logger().warn("Could not save target joint state - filtered_joint_state is None")
             self.stop_position_check_and_start_pause("target")
 
     def check_press_position_reached(self):
@@ -772,6 +841,36 @@ class ButtonFollower(Node):
             self.get_logger().info("Robot has reached TARGET RETURN position!")
             self.stop_position_check_and_start_pause("target_return")
 
+    def check_target_joint_angles_reached(self):
+        """检查是否到达目标关节角度 (用于直接返回target的情况)"""
+        if self.target_joint_state is None:
+            self.get_logger().error("No target joint state available for joint angle check")
+            self.stop_position_check_and_reset()
+            return
+
+        if self.filtered_joint_state is None:
+            self.get_logger().error("No current joint state available for joint angle check")
+            return
+        
+        # 检查超时
+        current_time = self.get_clock().now()
+        elapsed_time = (current_time - self.position_check_start_time).nanoseconds / 1e9
+        
+        # 首先确保已经等待了最小稳定时间
+        if elapsed_time < self.min_settle_time:
+            self.get_logger().debug(f"Target joint angles settling... {elapsed_time:.1f}s < {self.min_settle_time}s")
+            return
+        
+        if elapsed_time > self.max_position_check_time:
+            self.get_logger().warn(f"Target joint angles check timeout after {elapsed_time:.1f} seconds")
+            self.stop_position_check_and_start_pause("target_return")
+            return
+        
+        # 检查关节角度是否到达
+        if self.check_joint_angles_reached(self.target_joint_state.position):
+            self.get_logger().info("Robot has reached TARGET JOINT ANGLES!")
+            self.stop_position_check_and_start_pause("target_return")
+
     def check_home_position_reached(self):
         """检查是否到达home位置 (通过关节角度检查)"""
         current_time = self.get_clock().now()
@@ -816,7 +915,7 @@ class ButtonFollower(Node):
         self.get_logger().info("Robot settled at TARGET position. Starting 2-second pause...")
         self.current_step = "pausing_at_target"
         # 创建真正的pause计时器
-        self.pause_timer = self.create_timer(2.0, self.create_one_shot_callback(self.proceed_to_press_step))
+        self.pause_timer = self.create_timer(0.0, self.create_one_shot_callback(self.proceed_to_press_step))
         self.get_logger().info("Target pause timer created (2 seconds)")
 
     def start_press_pause(self):
@@ -824,16 +923,16 @@ class ButtonFollower(Node):
         self.get_logger().info("Robot settled at PRESS position. Starting 3-second pause for button press...")
         self.current_step = "pausing_at_press"
         # 创建真正的pause计时器，按压后先回到target位置
-        self.pause_timer = self.create_timer(3.0, self.create_one_shot_callback(self.proceed_to_target_step))
+        self.pause_timer = self.create_timer(0.0, self.create_one_shot_callback(self.proceed_to_target_step))
         self.get_logger().info("Press pause timer created (3 seconds)")
 
     def start_target_return_pause(self):
         """机器人稳定在target返回位置后，开始真正的pause计时"""
-        self.get_logger().info("Robot settled at TARGET RETURN position. Starting 2-second pause...")
+        self.get_logger().info("Robot settled at TARGET RETURN position. Starting 0.3-second pause...")
         self.current_step = "pausing_at_target_return"
         # 创建真正的pause计时器，从target返回位置到home
-        self.pause_timer = self.create_timer(2.0, self.create_one_shot_callback(self.proceed_to_home_step))
-        self.get_logger().info("Target return pause timer created (2 seconds)")
+        self.pause_timer = self.create_timer(0.3, self.create_one_shot_callback(self.proceed_to_home_step))
+        self.get_logger().info("Target return pause timer created (1 second)")
 
     def start_home_pause(self):
         """机器人稳定在home位置后，开始真正的pause计时"""
@@ -861,8 +960,8 @@ class ButtonFollower(Node):
 
     def proceed_to_target_step(self):
         # 定时器已在包装器中被取消和销毁
-        self.get_logger().info("3-second press pause timer triggered")
-        self.log_current_state("Before Return to Target Planning")
+        self.get_logger().info("Press pause completed - returning to TARGET using saved joint state")
+        self.log_current_state("Before Direct Return to Target")
 
         # 确认前一步已完成
         if not self.trajectory_completed or self.current_step != "pausing_at_press":
@@ -870,10 +969,54 @@ class ButtonFollower(Node):
             self.reset_state()
             return
 
-        self.get_logger().info("STEP 3 STARTING: 3-second press pause completed. Now planning path back to TARGET...")
-        self.current_step = "planning_to_target_return"
-        self.trajectory_completed = False  # 重置完成标志
-        self.plan_to_target_return()
+        # 检查是否有保存的target关节状态
+        if self.target_joint_state is None:
+            self.get_logger().error("No saved target joint state available - falling back to planning")
+            self.get_logger().info("STEP 3 STARTING: Now planning path back to TARGET...")
+            self.current_step = "planning_to_target_return"
+            self.trajectory_completed = False
+            self.plan_to_target_return()
+            return
+
+        self.get_logger().info("STEP 3 STARTING: Directly commanding robot to return to TARGET position...")
+        self.current_step = "executing_direct_to_target_return"  # 使用新的步骤名称
+        self.trajectory_completed = False
+        
+        # 直接创建并执行到target的轨迹
+        self.execute_direct_target_return()
+
+    def execute_direct_target_return(self):
+        """直接执行回到target位置的轨迹，无需重新规划"""
+        if not self.execution_client.wait_for_server(timeout_sec=5.0):
+            self.get_logger().error("Execution action server not available for direct target return.")
+            self.reset_state()
+            return
+        
+        if self.target_joint_state is None:
+            self.get_logger().error("No target joint state available for direct return.")
+            self.reset_state()
+            return
+        
+        # 创建轨迹消息
+        from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+        
+        goal_msg = FollowJointTrajectory.Goal()
+        goal_msg.trajectory = JointTrajectory()
+        goal_msg.trajectory.header.stamp = self.get_clock().now().to_msg()
+        goal_msg.trajectory.joint_names = self.target_joint_state.name[:]
+        
+        # 创建轨迹点
+        point = JointTrajectoryPoint()
+        point.positions = self.target_joint_state.position[:]
+        point.velocities = [0.0] * len(self.target_joint_state.position)  # 目标速度为0
+        point.time_from_start.sec = 2  # 2秒内完成动作
+        point.time_from_start.nanosec = 0
+        
+        goal_msg.trajectory.points = [point]
+        
+        self.get_logger().info('Sending direct trajectory goal to return to TARGET...')
+        self._send_goal_future = self.execution_client.send_goal_async(goal_msg)
+        self._send_goal_future.add_done_callback(self.goal_response_callback)
 
     def proceed_to_home_step(self):
         # 定时器已在包装器中被取消和销毁
@@ -887,6 +1030,24 @@ class ButtonFollower(Node):
             return
 
         self.get_logger().info("STEP 4 STARTING: 2-second target return pause completed. Now planning path back HOME...")
+        self.current_step = "planning_to_home"
+        self.is_going_home = True
+        self.trajectory_completed = False  # 重置完成标志
+        self.plan_to_home()
+
+    def proceed_to_home_after_stabilization(self):
+        """在target位置稳定后进入home规划"""
+        # 定时器已在包装器中被取消和销毁
+        self.get_logger().info("Target stabilization completed")
+        self.log_current_state("After Target Stabilization")
+
+        # 确认前一步已完成
+        if not self.trajectory_completed or self.current_step != "stabilizing_after_target_return":
+            self.get_logger().error(f"Invalid state transition. Current step: {self.current_step}, Trajectory completed: {self.trajectory_completed}")
+            self.reset_state()
+            return
+
+        self.get_logger().info("STEP 4 STARTING: Now planning path back HOME...")
         self.current_step = "planning_to_home"
         self.is_going_home = True
         self.trajectory_completed = False  # 重置完成标志
@@ -929,6 +1090,7 @@ class ButtonFollower(Node):
         self.is_going_home = False
         self.current_goal_pose = None
         self.current_press_pose = None  # 清理按压位置
+        self.target_joint_state = None  # 清理保存的target关节状态
         self.current_step = "idle"
         self.trajectory_completed = False
         self.get_logger().info("Ready for next target.")
