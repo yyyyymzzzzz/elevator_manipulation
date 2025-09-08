@@ -62,12 +62,12 @@ def generate_launch_description():
     }
 
     button_detector_config = os.path.join(
-        '/home/ymz/Workspace/elevator_manipulation/config',
+        '/home/nvidia/Workspace/elevator_manipulation/config',
         'button_detector_params.yaml'
     )
     
     button_3d_config = os.path.join(
-        '/home/ymz/Workspace/elevator_manipulation/config',
+        '/home/nvidia/Workspace/elevator_manipulation/config',
         'button_3d_visualizer_params.yaml'
     )
 
@@ -162,7 +162,7 @@ def generate_launch_description():
         package='tf2_ros',
         executable='static_transform_publisher',
         name='static_camera_tf_publisher',
-        arguments=['0.08', '0.02', '0', '0', '1.5708', '1.5708', 'Camera3_Link', 'camera_link'],
+        arguments=['0.08', '0', '0', '0', '1.5708', '1.5708', 'Camera3_Link', 'camera_link'],
     )
 
     # 按钮检测节点

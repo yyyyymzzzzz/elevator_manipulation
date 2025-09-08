@@ -441,8 +441,7 @@ class ButtonFollower(Node):
         position_constraint.link_name = "link_a6"
         bounding_box = SolidPrimitive()
         bounding_box.type = SolidPrimitive.BOX
-        # 按压动作使用更宽松的约束，确保成功率
-        bounding_box.dimensions = [0.02, 0.02, 0.02]  # 5cm的容忍范围
+        bounding_box.dimensions = [0.02, 0.02, 0.02]  
         position_constraint.constraint_region.primitives.append(bounding_box)
         position_constraint.constraint_region.primitive_poses.append(self.current_press_pose.pose)
         position_constraint.weight = 1.0
@@ -456,7 +455,7 @@ class ButtonFollower(Node):
         orientation_constraint.absolute_x_axis_tolerance = 0.1
         orientation_constraint.absolute_y_axis_tolerance = 0.1
         orientation_constraint.absolute_z_axis_tolerance = 6.28
-        orientation_constraint.weight = 2.0  # 与target保持一致
+        orientation_constraint.weight = 1.0  
         constraints.orientation_constraints.append(orientation_constraint)
         
         motion_plan_request.goal_constraints.append(constraints)
@@ -960,6 +959,12 @@ class ButtonFollower(Node):
         self.get_logger().info("STEP 2 STARTING: 2-second pause completed. Now planning path to PRESS position...")
         self.current_step = "planning_to_press"
         self.trajectory_completed = False  # 重置完成标志
+
+        self.get_logger().info("Publishing success signal for button planner to switch target.")
+        completion_msg = String()
+        completion_msg.data = "success"
+        self.press_completion_publisher.publish(completion_msg)
+
         self.plan_to_press()
 
     def proceed_to_target_step(self):
@@ -1070,11 +1075,6 @@ class ButtonFollower(Node):
             
         self.get_logger().info("STEP 5 COMPLETED: 5-second home pause completed. Full cycle complete.")
         self.get_logger().info("=== CYCLE FINISHED SUCCESSFULLY ===")
-
-        self.get_logger().info("Publishing success signal for button planner to switch target.")
-        completion_msg = String()
-        completion_msg.data = "success"
-        self.press_completion_publisher.publish(completion_msg)
 
         self.reset_state()
 
