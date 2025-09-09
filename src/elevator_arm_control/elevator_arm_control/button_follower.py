@@ -5,6 +5,10 @@ from rclpy.node import Node
 from rclpy.action import ActionClient
 from rclpy.duration import Duration
 from rclpy.timer import Timer
+import json
+import copy
+import math
+import time
 
 from geometry_msgs.msg import PoseStamped, Pose
 from shape_msgs.msg import SolidPrimitive
@@ -17,7 +21,6 @@ from moveit_msgs.msg import (
     MotionPlanRequest,
     RobotState
 )
-import math
 from moveit_msgs.srv import GetMotionPlan
 from control_msgs.action import FollowJointTrajectory
 from trajectory_msgs.msg import JointTrajectoryPoint
@@ -56,6 +59,16 @@ class ButtonFollower(Node):
         
         # +++ 添加一个Publisher，用于在按压完成后通知planner
         self.press_completion_publisher = self.create_publisher(String, '/button_press/completed', 10)
+        
+        # 订阅AGV移动状态，用于禁止机械臂运动
+        self.agv_motion_status_subscriber = self.create_subscription(
+            String,
+            '/agv/motion_status',
+            self.agv_motion_status_callback,
+            10)
+        
+        # AGV移动状态标志
+        self.agv_is_moving = False
         
         # 当前末端执行器位置订阅者
         self.current_joint_state = None
@@ -165,6 +178,23 @@ class ButtonFollower(Node):
         else:
             # 如果在某些消息中关节不全，清除旧的过滤状态以防止使用过时数据
             self.filtered_joint_state = None
+
+    def agv_motion_status_callback(self, msg: String):
+        """接收AGV移动状态"""
+        try:
+            data = json.loads(msg.data)
+            status = data.get('status', '')
+            
+            if status == 'moving':
+                if not self.agv_is_moving:
+                    self.get_logger().info("AGV开始移动，禁止机械臂运动规划")
+                self.agv_is_moving = True
+            elif status == 'stopped':
+                if self.agv_is_moving:
+                    self.get_logger().info("AGV停止移动，允许机械臂运动规划")
+                self.agv_is_moving = False
+        except json.JSONDecodeError:
+            self.get_logger().warn("Invalid AGV motion status message")
 
     def get_current_end_effector_pose(self):
         """通过TF获取当前末端执行器位置"""
@@ -281,6 +311,11 @@ class ButtonFollower(Node):
 
     def target_pose_callback(self, msg: PoseStamped):
         current_time = self.get_clock().now()
+        
+        # 检查AGV是否在移动，如果是则拒绝目标
+        if self.agv_is_moving:
+            self.get_logger().warn("AGV is moving, ignoring arm target to prevent collision.")
+            return
         
         # 首先检查关节状态是否ready
         if not self.joint_state_ready:
@@ -960,11 +995,6 @@ class ButtonFollower(Node):
         self.current_step = "planning_to_press"
         self.trajectory_completed = False  # 重置完成标志
 
-        self.get_logger().info("Publishing success signal for button planner to switch target.")
-        completion_msg = String()
-        completion_msg.data = "success"
-        self.press_completion_publisher.publish(completion_msg)
-
         self.plan_to_press()
 
     def proceed_to_target_step(self):
@@ -1042,6 +1072,12 @@ class ButtonFollower(Node):
         self.current_step = "planning_to_home"
         self.is_going_home = True
         self.trajectory_completed = False  # 重置完成标志
+
+        self.get_logger().info("Publishing success signal for button planner to switch target.")
+        completion_msg = String()
+        completion_msg.data = "success"
+        self.press_completion_publisher.publish(completion_msg)
+        
         self.plan_to_home()
 
     def proceed_to_home_after_stabilization(self):
@@ -1075,6 +1111,12 @@ class ButtonFollower(Node):
             
         self.get_logger().info("STEP 5 COMPLETED: 5-second home pause completed. Full cycle complete.")
         self.get_logger().info("=== CYCLE FINISHED SUCCESSFULLY ===")
+        
+        # 发送按钮操作完全完成信号给AGV控制器
+        self.get_logger().info("发送按钮操作周期完成信号给AGV控制器")
+        completion_msg = String()
+        completion_msg.data = "cycle_complete"  # 使用不同的信号表示整个周期完成
+        self.press_completion_publisher.publish(completion_msg)
 
         self.reset_state()
 

@@ -87,6 +87,22 @@ class RealtimeButtonTargetPlanner(Node):
             10
         )
         
+        # 订阅AGV发送的目标按钮信息
+        self.target_button_subscriber = self.create_subscription(
+            String,
+            '/agv/target_button',
+            self.target_button_callback,
+            10
+        )
+        
+        # 订阅AGV移动状态，用于清理历史数据
+        self.agv_motion_status_subscriber = self.create_subscription(
+            String,
+            '/agv/motion_status',
+            self.agv_motion_status_callback,
+            10
+        )
+        
         # 发布者
         self.target_marker_publisher = self.create_publisher(
             MarkerArray,
@@ -103,6 +119,13 @@ class RealtimeButtonTargetPlanner(Node):
         self.all_targets_publisher = self.create_publisher(
             String,
             '/button_targets_json',
+            10
+        )
+        
+        # 发布当前选中按钮的位置信息（给AGV控制器使用）
+        self.current_button_info_publisher = self.create_publisher(
+            String,
+            '/current_button_info',
             10
         )
         
@@ -123,6 +146,16 @@ class RealtimeButtonTargetPlanner(Node):
         self.waiting_for_missing_button = False  # 是否在等待缺失的按钮
         self.missing_button_wait_time = 3.0  # 等待缺失按钮的时间（秒）
         self.missing_button_start_time = None
+        
+        # AGV控制的目标按钮
+        self.agv_target_button = None  # AGV指定的目标按钮
+        self.agv_target_location = None  # AGV当前地点
+        self.use_agv_control = False  # 是否使用AGV控制模式
+        
+        # AGV状态相关
+        self.agv_is_moving = False
+        self.agv_stop_time = None
+        self.planning_delay_after_stop = 2.0  # AGV停止后等待2秒再开始目标规划
         
         # 清理过时目标的相关参数
         self.last_cleanup_time = time.time()
@@ -164,13 +197,87 @@ class RealtimeButtonTargetPlanner(Node):
         self.get_logger().info('位置滤波: 已禁用，直接使用检测位置确保准确性')
 
     def press_completion_callback(self, msg):
-        if msg.data == "success" and self.button_selection_method == 'sequential':
-            self.get_logger().info("Received success signal from button_follower. Switching to next target.")
-            current_time = self.get_clock().now()
-            self.switch_to_next_button(current_time)
+        # 修改：收到任何成功信号都停止发布目标，等待AGV移动和发送新目标
+        if msg.data == "success" or msg.data == "cycle_complete":
+            self.get_logger().info(f"收到 {msg.data} 信号，按钮操作完成，停止发布目标等待AGV移动并发送新目标")
+            # 停止发布目标，等待AGV移动到新位置并发送新的目标按钮
+            self.use_agv_control = False
+            self.agv_target_button = None
+            self.agv_target_location = None
+    
+    def target_button_callback(self, msg):
+        """接收AGV发送的目标按钮信息"""
+        try:
+            target_data = json.loads(msg.data)
+            target_button = target_data.get('target_button')
+            location = target_data.get('location')
+            command = target_data.get('command')
+            
+            if command == 'press_button' and target_button:
+                self.get_logger().info(f"🎯 接收到AGV新目标按钮指令: {target_button} (地点: {location})，开始发布目标位置")
+                self.agv_target_button = target_button
+                self.agv_target_location = location
+                self.use_agv_control = True
+                
+                # 立即切换到指定的按钮
+                self.switch_to_agv_target_button(target_button)
+                
+        except json.JSONDecodeError:
+            self.get_logger().error("无法解析AGV目标按钮数据")
+
+    def agv_motion_status_callback(self, msg):
+        """接收AGV移动状态并清理历史数据"""
+        try:
+            data = json.loads(msg.data)
+            status = data.get('status', '')
+            
+            if status == 'moving':
+                self.get_logger().info("AGV开始移动，暂停目标规划并清理按钮检测历史数据")
+                self.agv_is_moving = True
+                self.agv_stop_time = None
+                # 清理历史数据
+                self.current_button_positions.clear()
+                self.target_poses.clear()
+                self.last_update_times.clear()
+                self.current_detected_classes.clear()
+                self.last_seen_times.clear()
+                
+                # 停止发布目标
+                self.use_agv_control = False
+                self.agv_target_button = None
+                
+                # 发布空的标记数组清空显示
+                empty_marker_array = MarkerArray()
+                self.target_marker_publisher.publish(empty_marker_array)
+                
+            elif status == 'stopped':
+                self.get_logger().info(f"AGV停止移动，等待新的目标指令（不自动恢复目标规划）")
+                self.agv_is_moving = False
+                self.agv_stop_time = self.get_clock().now()
+                self._first_planning_after_stop = True
+                # 注意：不再自动恢复目标规划，等待AGV发送新的目标按钮指令
+                
+        except json.JSONDecodeError:
+            self.get_logger().warn("Invalid AGV motion status message")
 
     def button_markers_callback(self, msg):
         """接收按钮3D位置标记并实时处理"""
+        # 检查AGV状态，如果正在移动则跳过处理
+        if self.agv_is_moving:
+            return
+            
+        # 如果AGV刚停止，检查是否已经等待足够时间
+        if self.agv_stop_time is not None:
+            current_time_ros = self.get_clock().now()
+            time_since_stop = (current_time_ros - self.agv_stop_time).nanoseconds / 1e9
+            if time_since_stop < self.planning_delay_after_stop:
+                return  # 还未到规划时间
+            else:
+                # 首次恢复规划时的日志
+                if hasattr(self, '_first_planning_after_stop') and self._first_planning_after_stop:
+                    self.get_logger().info("恢复目标规划")
+                    self._first_planning_after_stop = False
+        
         current_time = time.time()
         
         # 提取按钮位置信息和类别名称
@@ -571,19 +678,60 @@ class RealtimeButtonTargetPlanner(Node):
         self.get_logger().warn('所有历史按钮都不存在，保持当前选择')
         self.waiting_for_missing_button = True
         self.missing_button_start_time = time.time()
+    
+    def switch_to_agv_target_button(self, target_button: str):
+        """切换到AGV指定的目标按钮"""
+        # 检查目标按钮是否在历史按钮列表中
+        if target_button in self.historical_button_classes:
+            # 直接切换到指定的按钮
+            self.current_selected_class = target_button
+            self.current_class_index = self.historical_button_classes.index(target_button)
+            self.last_button_switch_time = self.get_clock().now()
+            self.waiting_for_missing_button = False
+            self.missing_button_start_time = None
+            
+            # 检查按钮是否存在
+            button_exists = target_button in self.current_detected_classes
+            status = "✓存在" if button_exists else "✗缺失"
+            
+            self.get_logger().info(f'🎯 AGV指定目标按钮: {target_button} ({status})')
+            
+            if not button_exists:
+                self.get_logger().warn(f'AGV指定的按钮 {target_button} 当前不可见，等待检测...')
+                self.waiting_for_missing_button = True
+                self.missing_button_start_time = time.time()
+        else:
+            self.get_logger().error(f'AGV指定的按钮 {target_button} 不在历史按钮列表中: {self.historical_button_classes}')
+            # 如果不在列表中，将其添加到列表末尾
+            self.historical_button_classes.append(target_button)
+            self.current_selected_class = target_button
+            self.current_class_index = len(self.historical_button_classes) - 1
+            self.waiting_for_missing_button = True
+            self.missing_button_start_time = time.time()
+            self.get_logger().info(f'已将 {target_button} 添加到历史按钮列表，等待检测...')
 
     def publish_targets_callback(self):
         """高频发布目标位置"""
+        # 检查AGV状态，如果正在移动则跳过发布
+        if self.agv_is_moving:
+            return
+        
+        # 如果没有AGV控制目标，则不发布任何目标
+        if not self.use_agv_control or self.agv_target_button is None:
+            return
+            
+        # 如果AGV刚停止，检查是否已经等待足够时间
+        if self.agv_stop_time is not None:
+            current_time = self.get_clock().now()
+            time_since_stop = (current_time - self.agv_stop_time).nanoseconds / 1e9
+            if time_since_stop < self.planning_delay_after_stop:
+                return  # 还未到发布时间
+        
         if not self.target_poses:
             return
         
-        # 根据选择方法发布目标
-        if self.button_selection_method == 'all':
-            self.publish_all_targets()
-        elif self.button_selection_method == 'sequential':
-            self.publish_sequential_target()
-        elif self.button_selection_method == 'closest':
-            self.publish_closest_target()
+        # 只发布AGV控制模式的目标
+        self.publish_agv_controlled_target()
         
         # 发布可视化标记
         self.publish_visualization()
@@ -596,6 +744,9 @@ class RealtimeButtonTargetPlanner(Node):
         
         target_pose = self.target_poses[self.current_selected_class]
         self.publish_single_target_pose(target_pose)
+        
+        # 发布当前选中按钮的详细信息给AGV控制器
+        self.publish_current_button_info()
         
         # 每隔一定时间输出当前选中按钮的详细信息
         current_time = time.time()
@@ -625,6 +776,45 @@ class RealtimeButtonTargetPlanner(Node):
                 self.get_logger().info(f'🎯 目标位置: ({target_pos[0]:.3f}, {target_pos[1]:.3f}, {target_pos[2]:.3f})')
                 
             self.last_info_time = current_time
+    
+    def publish_agv_controlled_target(self):
+        """发布AGV控制指定的按钮目标位置"""
+        if (self.agv_target_button is None or 
+            self.agv_target_button not in self.target_poses):
+            # 如果指定的按钮不存在目标位置，记录警告但不发布
+            if self.agv_target_button:
+                button_exists = self.agv_target_button in self.current_detected_classes
+                if not button_exists:
+                    self.get_logger().debug(f'AGV指定按钮 {self.agv_target_button} 未检测到，等待中...')
+                else:
+                    self.get_logger().warn(f'AGV指定按钮 {self.agv_target_button} 已检测到但无目标位置计算')
+            return
+        
+        target_pose = self.target_poses[self.agv_target_button]
+        self.publish_single_target_pose(target_pose)
+        
+        # 发布当前按钮信息
+        self.publish_current_button_info()
+        
+        # 定期输出AGV控制模式的状态信息
+        current_time = time.time()
+        if not hasattr(self, 'last_agv_info_time'):
+            self.last_agv_info_time = current_time
+        
+        if current_time - self.last_agv_info_time > 2.0:  # 每2秒输出一次
+            button_exists = self.agv_target_button in self.current_detected_classes
+            status = "✓存在" if button_exists else "✗缺失"
+            
+            self.get_logger().info(f'🎯 AGV控制模式 - 目标按钮: {self.agv_target_button} '
+                                  f'(地点: {self.agv_target_location}) {status}')
+            
+            if button_exists:
+                target_pos = target_pose['position']
+                button_pos = target_pose['button_position']
+                self.get_logger().info(f'📍 按钮位置: ({button_pos[0]:.3f}, {button_pos[1]:.3f}, {button_pos[2]:.3f})')
+                self.get_logger().info(f'🎯 目标位置: ({target_pos[0]:.3f}, {target_pos[1]:.3f}, {target_pos[2]:.3f})')
+            
+            self.last_agv_info_time = current_time
 
     def publish_closest_target(self):
         """发布距离机器人最近的按钮目标位置"""
@@ -691,6 +881,60 @@ class RealtimeButtonTargetPlanner(Node):
         pose_msg.pose.orientation.w = float(target_pose['orientation'][3])
         
         self.target_pose_publisher.publish(pose_msg)
+    
+    def publish_current_button_info(self):
+        """发布当前选中按钮的详细信息给AGV控制器"""
+        if (self.current_selected_class is None or 
+            self.current_selected_class not in self.target_poses or
+            self.current_selected_class not in self.current_button_positions):
+            return
+        
+        target_pose = self.target_poses[self.current_selected_class]
+        button_data = self.current_button_positions[self.current_selected_class]
+        
+        # 构建当前按钮信息
+        button_info = {
+            'timestamp': time.time(),
+            'button_name': self.current_selected_class,
+            'button_index': self.current_class_index + 1,
+            'total_buttons': len(self.historical_button_classes),
+            'button_exists': self.current_selected_class in self.current_detected_classes,
+            'button_position': {
+                'x': float(button_data['position'][0]),
+                'y': float(button_data['position'][1]),
+                'z': float(button_data['position'][2])
+            },
+            'target_position': {
+                'x': float(target_pose['position'][0]),
+                'y': float(target_pose['position'][1]),
+                'z': float(target_pose['position'][2])
+            },
+            'target_orientation': {
+                'x': float(target_pose['orientation'][0]),
+                'y': float(target_pose['orientation'][1]),
+                'z': float(target_pose['orientation'][2]),
+                'w': float(target_pose['orientation'][3])
+            },
+            'frame_id': target_pose['frame_id'],
+            'status': 'available' if self.current_selected_class in self.current_detected_classes else 'missing',
+            'selection_method': 'agv_controlled' if self.use_agv_control else self.button_selection_method,
+            'agv_controlled': self.use_agv_control,
+            'agv_target_location': self.agv_target_location if self.use_agv_control else None
+        }
+        
+        # 添加等待状态信息
+        if self.waiting_for_missing_button and self.missing_button_start_time is not None:
+            remaining_wait = max(0, self.missing_button_wait_time - (time.time() - self.missing_button_start_time))
+            button_info['waiting_for_button'] = True
+            button_info['remaining_wait_time'] = remaining_wait
+        else:
+            button_info['waiting_for_button'] = False
+            button_info['remaining_wait_time'] = 0.0
+        
+        # 发布信息
+        info_msg = String()
+        info_msg.data = json.dumps(button_info, indent=2)
+        self.current_button_info_publisher.publish(info_msg)
 
     def publish_visualization(self):
         """发布可视化标记"""

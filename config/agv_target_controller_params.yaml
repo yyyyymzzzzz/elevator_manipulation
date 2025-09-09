@@ -1,0 +1,24 @@
+agv_target_controller:
+  ros__parameters:
+    # 机器人连接参数
+    robot_ip: "192.168.10.10"
+    robot_port: 31001
+    
+    # 导航地点列表
+    locations: ["A", "B"]
+    
+    # 每个地点的按钮按压序列
+    # 注意：这里的按钮编号需要与实际检测到的按钮类别名称匹配
+    # 支持数字按钮："1", "2", "3", "4", "5", "6", "7", "8", "9", "10", 等
+    # 支持功能按钮："Open", "Close", "Up", "Down", "Alarm", 等
+    location_button_sequences:
+      A: ["1", "2", "3"]     # 地点A：按钮1 -> 按钮2 -> 按钮3
+      B: ["1", "2", "3"]     # 地点B：按钮1 -> 按钮2 -> 按钮3
+
+    # 时间参数
+    wait_time_after_arrival: 5.0      # 到达后等待开始按钮检测的时间(秒)
+    button_press_timeout: 90.0        # 单个按钮按压超时时间(秒)
+    navigation_timeout: 60.0          # 导航超时时间(秒)
+    
+    # 循环控制
+    enable_continuous_loop: true      # 是否启用连续循环模式

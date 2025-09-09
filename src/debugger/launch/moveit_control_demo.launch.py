@@ -38,28 +38,7 @@ def generate_launch_description():
             publish_robot_description=True, publish_robot_description_semantic=True
         )
         .to_moveit_configs()
-    )    
-    # 自定义 OMPL 配置作为参数字典
-    ompl_planning_yaml_params = {
-        "planning_pipelines": ["ompl"],
-        "default_planning_pipeline": "ompl",
-        "ompl": {
-            "planning_plugin": "ompl_interface/OMPLPlanner",
-            "request_adapters": "default_planning_request_adapters/AddTimeOptimalParameterization default_planning_request_adapters/FixWorkspaceBounds default_planning_request_adapters/FixStartStateBounds default_planning_request_adapters/FixStartStateCollision default_planning_request_adapters/FixStartStatePathConstraints",
-            "default_planning_request_adapters": {
-                "AddTimeOptimalParameterization": {
-                    "type": "planning_request_adapter/AddTimeOptimalParameterization",
-                    "path_tolerance": 0.1,
-                    "resample_dt": 0.5,
-                }
-            },
-        },
-        "jaka_arm": {
-            "planner_configs": ["RRTConnect"],
-            "projection_evaluator": "joints(l_a1,l_a2)",
-            "longest_valid_segment_fraction": 1.0,
-        },
-    }
+    )  
 
     # 1. Start move_group node
     run_move_group_node = Node(
@@ -68,7 +47,6 @@ def generate_launch_description():
         output="screen",
         parameters=[
             moveit_config.to_dict(),
-            ompl_planning_yaml_params, 
             {"publish_robot_description_semantic": True},
             {"allow_trajectory_execution": True},
             {"fake_execution": False},
@@ -155,6 +133,11 @@ def generate_launch_description():
         arguments=['0.1', '0', '0', '0', '1.5708', '1.5708', 'Camera3_Link', 'camera_link'],
     )
 
+    import yaml
+    print("--- DEBUG: Move Group All Parameters START ---")
+    # 将 moveit_config.to_dict() 的内容转换为 YAML 格式并打印，方便阅读
+    print(yaml.dump(moveit_config.to_dict()))
+    print("--- DEBUG: Move Group All Parameters END ---")
 
     return LaunchDescription(
         [

@@ -4,6 +4,7 @@ import rclpy
 from rclpy.node import Node
 import numpy as np
 import cv2
+import json
 from sensor_msgs.msg import Image, PointCloud2, CameraInfo
 from std_msgs.msg import String, Header, ColorRGBA
 from visualization_msgs.msg import Marker, MarkerArray
@@ -68,6 +69,14 @@ class Button3DVisualizer(Node):
             10
         )
         
+        # 订阅AGV移动状态，用于清理历史数据
+        self.agv_motion_status_subscriber = self.create_subscription(
+            String,
+            '/agv/motion_status',
+            self.agv_motion_status_callback,
+            10
+        )
+        
         # 发布3D可视化标记
         self.marker_publisher = self.create_publisher(
             MarkerArray, 
@@ -82,6 +91,11 @@ class Button3DVisualizer(Node):
         # 存储当前的检测结果和标记，用于持续发布
         self.current_detections = []
         self.last_marker_array = None
+        
+        # AGV状态相关
+        self.agv_is_moving = False
+        self.agv_stop_time = None
+        self.detection_delay_after_stop = 2.0  # AGV停止后等待2秒再开始3D可视化
         
         # 创建定时器，定期重新发布标记以防止消失
         self.marker_republish_timer = self.create_timer(
@@ -109,6 +123,31 @@ class Button3DVisualizer(Node):
         self.camera_info = msg
         # self.get_logger().info(f'收到相机内参信息: fx={msg.k[0]:.1f}, fy={msg.k[4]:.1f}, cx={msg.k[2]:.1f}, cy={msg.k[5]:.1f}')
 
+    def agv_motion_status_callback(self, msg):
+        """接收AGV移动状态并清理历史数据"""
+        try:
+            data = json.loads(msg.data)
+            status = data.get('status', '')
+            
+            if status == 'moving':
+                self.get_logger().info("AGV开始移动，暂停3D可视化并清理历史数据")
+                self.agv_is_moving = True
+                self.agv_stop_time = None
+                # 清理当前检测和标记数据
+                self.current_detections = []
+                self.last_marker_array = None
+                # 发布空标记数组清空显示
+                self.publish_empty_markers()
+                
+            elif status == 'stopped':
+                self.get_logger().info(f"AGV停止移动，{self.detection_delay_after_stop}秒后恢复3D可视化")
+                self.agv_is_moving = False
+                self.agv_stop_time = self.get_clock().now()
+                self._first_visualization_after_stop = True
+                
+        except json.JSONDecodeError:
+            self.get_logger().warn("Invalid AGV motion status message")
+
     def depth_callback(self, msg):
         """接收深度图像"""
         try:
@@ -119,6 +158,22 @@ class Button3DVisualizer(Node):
 
     def detection_callback(self, msg):
         """接收检测结果并生成3D可视化"""
+        # 检查AGV状态，如果正在移动则跳过3D可视化
+        if self.agv_is_moving:
+            return
+            
+        # 如果AGV刚停止，检查是否已经等待足够时间
+        if self.agv_stop_time is not None:
+            current_time = self.get_clock().now()
+            time_since_stop = (current_time - self.agv_stop_time).nanoseconds / 1e9
+            if time_since_stop < self.detection_delay_after_stop:
+                return  # 还未到可视化时间
+            else:
+                # 首次恢复可视化时的日志
+                if hasattr(self, '_first_visualization_after_stop') and self._first_visualization_after_stop:
+                    self.get_logger().info("恢复3D可视化")
+                    self._first_visualization_after_stop = False
+        
         if self.latest_depth_image is None:
             self.get_logger().warn('没有可用的深度图像')
             return
