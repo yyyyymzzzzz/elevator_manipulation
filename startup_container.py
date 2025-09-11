@@ -6,7 +6,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from moveit_configs_utils import MoveItConfigsBuilder
 from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 
 def generate_launch_description():
     # Declare the use_sim_time argument
@@ -14,6 +14,22 @@ def generate_launch_description():
         'use_sim_time',
         default_value='false',
         description='Use simulation (Gazebo) clock if true'
+    )
+
+    agv_pkg_share = get_package_share_directory('agv_controller')
+    elevator_perception_pkg = get_package_share_directory('elevator_perception')
+    elevator_arm_pkg = get_package_share_directory('elevator_arm_control')
+
+    robot_ip_arg = DeclareLaunchArgument(
+        'robot_ip',
+        default_value='192.168.10.10',
+        description='AGV机器人IP地址'
+    )
+    
+    arm_ip_arg = DeclareLaunchArgument(
+        'arm_ip', 
+        default_value='192.168.10.100',
+        description='机械臂IP地址'
     )
 
     # Get the value of the use_sim_time argument
@@ -69,6 +85,11 @@ def generate_launch_description():
     button_3d_config = os.path.join(
         '/home/nvidia/Workspace/elevator_manipulation/config',
         'button_3d_visualizer_params.yaml'
+    )
+
+    realtime_button_target_planner_config = os.path.join(
+        '/home/nvidia/Workspace/elevator_manipulation/config',
+        'realtime_button_target_planner_params.yaml'
     )
 
     # 1. Start move_group node
@@ -162,7 +183,7 @@ def generate_launch_description():
         package='tf2_ros',
         executable='static_transform_publisher',
         name='static_camera_tf_publisher',
-        arguments=['0.08', '0', '0', '0', '1.5708', '1.5708', 'Camera3_Link', 'camera_link'],
+        arguments=['0.08', '0.01', '0', '0', '1.5708', '1.5708', 'Camera3_Link', 'camera_link'],
     )
 
     # 按钮检测节点
@@ -183,9 +204,46 @@ def generate_launch_description():
         output='screen'
     )
 
+    # 实时按钮目标规划器节点
+    realtime_planner_node = Node(
+        package='elevator_perception',
+        executable='realtime_button_target_planner',
+        name='realtime_button_target_planner',
+        parameters=[realtime_button_target_planner_config],
+        output='screen',
+        emulate_tty=True
+    )
+
+    button_follower_node = Node(
+        package='elevator_arm_control',
+        executable='button_follower',
+        name='button_follower',
+        output='screen'
+    )
+
+    agv_controller_node = Node(
+        package='agv_controller',
+        executable='agv_target_controller',
+        name='agv_target_controller',
+        output='screen',
+        parameters=[
+            PathJoinSubstitution([
+                get_package_share_directory('agv_controller'),
+                'config',
+                'agv_target_controller_params.yaml'
+            ]),
+            {
+                'robot_ip': LaunchConfiguration('robot_ip'),
+                'use_sim_time': LaunchConfiguration('use_sim_time'),
+            }
+        ]
+    )
+
     return LaunchDescription(
         [
             use_sim_time_arg,
+            robot_ip_arg,
+            arm_ip_arg,
             rviz_node,
             robot_state_publisher,
             run_move_group_node,
@@ -194,6 +252,9 @@ def generate_launch_description():
             camera_launch,
             static_tf_node,
             button_detector_node,
-            button_3d_visualizer_node
+            button_3d_visualizer_node,
+            realtime_planner_node,
+            button_follower_node,
+            agv_controller_node
         ]
     )

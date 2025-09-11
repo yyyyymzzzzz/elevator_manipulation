@@ -588,7 +588,8 @@ class ArmController(Node):
             return
         
         # 检查是否与上次命令相同，避免重复执行
-        robot_joint_positions = list(msg.data)
+        urdf_joint_positions = list(msg.data)
+        robot_joint_positions = urdf_joint_positions 
         current_time = time.time()
         
         # 将URDF坐标系的角度转换为实际机器人的角度

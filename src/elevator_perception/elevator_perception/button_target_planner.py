@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+# 此节点已弃用，使用优化后的realtime_button_target_planner.py替代
+
 import rclpy
 from rclpy.node import Node
 import numpy as np

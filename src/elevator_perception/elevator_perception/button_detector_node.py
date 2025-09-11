@@ -3,6 +3,7 @@ from rclpy.node import Node
 from ultralytics import YOLO
 import cv2
 import torch
+import json
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
 
@@ -52,6 +53,11 @@ class ButtonDetector(Node):
         self.detection_history = []
         self.max_history_length = 5  # 保持最近5帧的检测历史
         
+        # AGV状态相关
+        self.agv_is_moving = False
+        self.agv_stop_time = None
+        self.detection_delay_after_stop = 0.0  # AGV停止后等待2秒再开始识别
+        
         self.model = YOLO(model_path)
         self.model.to(self.device)
 
@@ -63,12 +69,64 @@ class ButtonDetector(Node):
             10
         )
 
+        # 订阅当前机器人状态
+        self.robot_status_subscriber = self.create_subscription(
+            String,
+            '/decision_maker/status',
+            self.robot_status_callback,
+            10
+        )
+
         # 发布识别结果图像
         self.image_publisher = self.create_publisher(Image, '/detector/image', 10)
         # 发布识别结果（文本）
         self.result_publisher = self.create_publisher(String, '/detector/result', 10)
 
+    def robot_status_callback(self, msg):
+        """接收机器人状态并清理历史数据"""
+        try:
+            data = json.loads(msg.data)
+            is_moving = data.get('is_moving', False)
+
+            if is_moving:
+                if not self.agv_is_moving:
+                    self.get_logger().info("AGV开始移动，暂停按钮识别并清理历史数据")
+                self.agv_is_moving = True
+                self.agv_stop_time = None
+                # 清理检测历史
+                self.detection_history.clear()
+                # 发布空检测结果
+                empty_result = String(data='No detections')
+                self.result_publisher.publish(empty_result)
+            else:
+                if self.agv_is_moving:
+                    self.get_logger().info(f"AGV停止移动，{self.detection_delay_after_stop}秒后恢复按钮识别")
+                    self.agv_stop_time = self.get_clock().now()
+                    self._first_detection_after_stop = True  # 标记需要在恢复时打印日志
+                self.agv_is_moving = False
+                
+        except json.JSONDecodeError:
+            self.get_logger().warn("Invalid AGV motion status message")
+
     def image_callback(self, msg):
+        # 检查AGV状态，如果正在移动则跳过识别
+        if self.agv_is_moving:
+            return
+            
+        # 如果AGV刚停止，检查是否已经等待足够时间
+        if self.agv_stop_time is not None:
+            current_time = self.get_clock().now()
+            time_since_stop = (current_time - self.agv_stop_time).nanoseconds / 1e9
+            if time_since_stop < self.detection_delay_after_stop:
+                return  # 还未到识别时间
+            else:
+                # 首次恢复识别时的日志
+                if hasattr(self, '_first_detection_after_stop') and self._first_detection_after_stop:
+                    self.get_logger().info("恢复按钮识别")
+                    self._first_detection_after_stop = False
+                elif not hasattr(self, '_first_detection_after_stop'):
+                    self._first_detection_after_stop = False
+        
         # ROS Image -> OpenCV
         import numpy as np
         img = self.ros_img_to_cv2(msg)
@@ -82,7 +140,7 @@ class ButtonDetector(Node):
         else:
             # 原始单窗口检测
             processed_img, self.roi_offset, self.scale_factor = self.preprocess_image(img)
-            results = self.model(processed_img)
+            results = self.model(processed_img, verbose=False)
             all_results = self.transform_results_to_original(results[0])
         
         # 在原始图像上绘制所有结果
@@ -383,7 +441,7 @@ class ButtonDetector(Node):
                     processed_window = window_img.copy()
                 
                 # YOLO 推理
-                results = self.model(processed_window)
+                results = self.model(processed_window, verbose=False)
                 
                 # 转换检测结果坐标到原始图像坐标系
                 if results[0].boxes is not None:
@@ -569,8 +627,10 @@ class ButtonDetector(Node):
             return detections
 
         adjacency_iou_threshold = 0.05
+        max_re_detections = 3  # 最大重新检测次数，防止无限循环
+        re_detection_count = 0
 
-        while True:
+        while re_detection_count < max_re_detections:
             re_detected_something = False
             i = 0
             while i < len(detections):
@@ -640,7 +700,7 @@ class ButtonDetector(Node):
                         j += 1
                         continue
 
-                    results = self.model(roi_image)
+                    results = self.model(roi_image, verbose=False)
                     
                     # 4. 处理新结果并替换旧结果
                     new_detections = []
@@ -669,6 +729,8 @@ class ButtonDetector(Node):
                     detections.extend(new_detections)
                     
                     re_detected_something = True
+                    re_detection_count += 1  # 增加重新检测计数
+                    self.get_logger().info(f"Re-detection completed. Count: {re_detection_count}/{max_re_detections}")
                     break
                 
                 if re_detected_something:
@@ -678,6 +740,9 @@ class ButtonDetector(Node):
             
             if not re_detected_something:
                 break
+        
+        if re_detection_count >= max_re_detections:
+            self.get_logger().warn(f"Maximum re-detection limit ({max_re_detections}) reached. Stopping to prevent infinite loop.")
 
         return detections
     

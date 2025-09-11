@@ -179,17 +179,17 @@ class ButtonFollower(Node):
             # 如果在某些消息中关节不全，清除旧的过滤状态以防止使用过时数据
             self.filtered_joint_state = None
 
-    def agv_motion_status_callback(self, msg: String):
-        """接收AGV移动状态"""
+    def robot_status_callback(self, msg: String):
+        """接收机器人状态"""
         try:
             data = json.loads(msg.data)
-            status = data.get('status', '')
-            
-            if status == 'moving':
+            is_moving = data['is_moving']
+
+            if is_moving:
                 if not self.agv_is_moving:
                     self.get_logger().info("AGV开始移动，禁止机械臂运动规划")
                 self.agv_is_moving = True
-            elif status == 'stopped':
+            else:
                 if self.agv_is_moving:
                     self.get_logger().info("AGV停止移动，允许机械臂运动规划")
                 self.agv_is_moving = False

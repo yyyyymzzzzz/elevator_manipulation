@@ -87,22 +87,22 @@ class RealtimeButtonTargetPlanner(Node):
             10
         )
         
-        # 订阅AGV发送的目标按钮信息
+        # 订阅决策节点发送的目标按钮信息
         self.target_button_subscriber = self.create_subscription(
             String,
-            '/agv/target_button',
+            '/decision/target_button',
             self.target_button_callback,
             10
         )
-        
-        # 订阅AGV移动状态，用于清理历史数据
-        self.agv_motion_status_subscriber = self.create_subscription(
+
+        # 订阅当前机器人状态
+        self.robot_status_subscriber = self.create_subscription(
             String,
-            '/agv/motion_status',
-            self.agv_motion_status_callback,
+            '/decision_maker/status',
+            self.robot_status_callback,
             10
         )
-        
+
         # 发布者
         self.target_marker_publisher = self.create_publisher(
             MarkerArray,
@@ -206,7 +206,7 @@ class RealtimeButtonTargetPlanner(Node):
             self.agv_target_location = None
     
     def target_button_callback(self, msg):
-        """接收AGV发送的目标按钮信息"""
+        """接收目标按钮信息"""
         try:
             target_data = json.loads(msg.data)
             target_button = target_data.get('target_button')
@@ -214,7 +214,7 @@ class RealtimeButtonTargetPlanner(Node):
             command = target_data.get('command')
             
             if command == 'press_button' and target_button:
-                self.get_logger().info(f"🎯 接收到AGV新目标按钮指令: {target_button} (地点: {location})，开始发布目标位置")
+                self.get_logger().info(f"🎯 接收到新目标按钮指令: {target_button} (地点: {location})，开始发布目标位置")
                 self.agv_target_button = target_button
                 self.agv_target_location = location
                 self.use_agv_control = True
@@ -225,14 +225,15 @@ class RealtimeButtonTargetPlanner(Node):
         except json.JSONDecodeError:
             self.get_logger().error("无法解析AGV目标按钮数据")
 
-    def agv_motion_status_callback(self, msg):
-        """接收AGV移动状态并清理历史数据"""
+    def robot_status_callback(self, msg):
+        """接收机器人状态并清理历史数据"""
         try:
             data = json.loads(msg.data)
-            status = data.get('status', '')
+            is_moving = data['is_moving']
             
-            if status == 'moving':
-                self.get_logger().info("AGV开始移动，暂停目标规划并清理按钮检测历史数据")
+            if is_moving:
+                if not self.agv_is_moving:
+                    self.get_logger().info("AGV开始移动，暂停目标规划并清理按钮检测历史数据")
                 self.agv_is_moving = True
                 self.agv_stop_time = None
                 # 清理历史数据
@@ -248,14 +249,13 @@ class RealtimeButtonTargetPlanner(Node):
                 
                 # 发布空的标记数组清空显示
                 empty_marker_array = MarkerArray()
-                self.target_marker_publisher.publish(empty_marker_array)
-                
-            elif status == 'stopped':
-                self.get_logger().info(f"AGV停止移动，等待新的目标指令（不自动恢复目标规划）")
+                self.target_marker_publisher.publish(empty_marker_array)   
+            else:
+                if self.agv_is_moving:
+                    self.get_logger().info(f"AGV停止移动，等待新的目标指令（不自动恢复目标规划）")
+                    self.agv_stop_time = self.get_clock().now()
+                    self._first_planning_after_stop = True
                 self.agv_is_moving = False
-                self.agv_stop_time = self.get_clock().now()
-                self._first_planning_after_stop = True
-                # 注意：不再自动恢复目标规划，等待AGV发送新的目标按钮指令
                 
         except json.JSONDecodeError:
             self.get_logger().warn("Invalid AGV motion status message")

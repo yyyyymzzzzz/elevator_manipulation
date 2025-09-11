@@ -68,12 +68,12 @@ class Button3DVisualizer(Node):
             self.camera_info_callback,
             10
         )
-        
-        # 订阅AGV移动状态，用于清理历史数据
-        self.agv_motion_status_subscriber = self.create_subscription(
+
+        # 订阅当前机器人状态
+        self.robot_status_subscriber = self.create_subscription(
             String,
-            '/agv/motion_status',
-            self.agv_motion_status_callback,
+            '/decision_maker/status',
+            self.robot_status_callback,
             10
         )
         
@@ -95,7 +95,7 @@ class Button3DVisualizer(Node):
         # AGV状态相关
         self.agv_is_moving = False
         self.agv_stop_time = None
-        self.detection_delay_after_stop = 2.0  # AGV停止后等待2秒再开始3D可视化
+        self.detection_delay_after_stop = 0.5  # AGV停止后等待0.5秒再开始3D可视化
         
         # 创建定时器，定期重新发布标记以防止消失
         self.marker_republish_timer = self.create_timer(
@@ -123,14 +123,15 @@ class Button3DVisualizer(Node):
         self.camera_info = msg
         # self.get_logger().info(f'收到相机内参信息: fx={msg.k[0]:.1f}, fy={msg.k[4]:.1f}, cx={msg.k[2]:.1f}, cy={msg.k[5]:.1f}')
 
-    def agv_motion_status_callback(self, msg):
-        """接收AGV移动状态并清理历史数据"""
+    def robot_status_callback(self, msg):
+        """接收机器人状态并清理历史数据"""
         try:
             data = json.loads(msg.data)
-            status = data.get('status', '')
+            is_moving = data['is_moving']
             
-            if status == 'moving':
-                self.get_logger().info("AGV开始移动，暂停3D可视化并清理历史数据")
+            if is_moving:
+                if not self.agv_is_moving:
+                    self.get_logger().info("AGV开始移动，暂停3D可视化并清理历史数据")
                 self.agv_is_moving = True
                 self.agv_stop_time = None
                 # 清理当前检测和标记数据
@@ -138,15 +139,15 @@ class Button3DVisualizer(Node):
                 self.last_marker_array = None
                 # 发布空标记数组清空显示
                 self.publish_empty_markers()
-                
-            elif status == 'stopped':
-                self.get_logger().info(f"AGV停止移动，{self.detection_delay_after_stop}秒后恢复3D可视化")
+            else:
+                if self.agv_is_moving:
+                    self.get_logger().info(f"AGV停止移动，{self.detection_delay_after_stop}秒后恢复3D可视化")
+                    self.agv_stop_time = self.get_clock().now()
+                    self._first_visualization_after_stop = True
                 self.agv_is_moving = False
-                self.agv_stop_time = self.get_clock().now()
-                self._first_visualization_after_stop = True
                 
         except json.JSONDecodeError:
-            self.get_logger().warn("Invalid AGV motion status message")
+            self.get_logger().warn("Invalid robot status message")
 
     def depth_callback(self, msg):
         """接收深度图像"""
