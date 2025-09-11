@@ -16,7 +16,7 @@ agv_target_controller:
       B: ["1", "2", "3"]     # 地点B：按钮1 -> 按钮2 -> 按钮3
 
     # 时间参数
-    wait_time_after_arrival: 5.0      # 到达后等待开始按钮检测的时间(秒)
+    wait_time_after_arrival: 0.0      # 到达后等待开始按钮检测的时间(秒)
     button_press_timeout: 90.0        # 单个按钮按压超时时间(秒)
     navigation_timeout: 60.0          # 导航超时时间(秒)
     

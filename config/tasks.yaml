@@ -1,0 +1,77 @@
+# 简化的任务配置文件
+# 定义电梯按钮操作的任务序列
+
+tasks:
+  - name: "电梯按钮操作任务"
+    steps:
+      - step_id: "导航到A点"
+        task_type: "navigation"
+        location: "A"
+      
+      - step_id: "按压按钮1"
+        task_type: "button_press"
+        location: "A"
+        button: "1"
+
+      - step_id: "按压按钮2"
+        task_type: "button_press"
+        location: "A"
+        button: "2"
+
+      - step_id: "按压按钮3"
+        task_type: "button_press"
+        location: "A"
+        button: "3"
+
+      - step_id: "按压按钮5"
+        task_type: "button_press"
+        location: "A"
+        button: "5"
+
+      - step_id: "按压按钮6"
+        task_type: "button_press"
+        location: "A"
+        button: "6"
+      
+      - step_id: "按压按钮7"
+        task_type: "button_press"
+        location: "A"
+        button: "7"
+
+      - step_id: "导航到B点"
+        task_type: "navigation"
+        location: "B"
+      
+      - step_id: "按压按钮2"
+        task_type: "button_press"
+        location: "B"
+        button: "2"
+
+      - step_id: "按压按钮4"
+        task_type: "button_press"
+        location: "B"
+        button: "4"
+
+      - step_id: "按压按钮Open"
+        task_type: "button_press"
+        location: "B"
+        button: "Open"
+      
+      - step_id: "按压按钮Close"
+        task_type: "button_press"
+        location: "B"
+        button: "Close"
+      
+      - step_id: "按压按钮Phone"
+        task_type: "button_press"
+        location: "B"
+        button: "Phone"
+      
+      - step_id: "按压按钮Alarm"
+        task_type: "button_press"
+        location: "B"
+        button: "Alarm"
+
+      - step_id: "导航到home点"
+        task_type: "navigation"
+        location: "home"
