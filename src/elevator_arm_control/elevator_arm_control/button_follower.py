@@ -57,14 +57,14 @@ class ButtonFollower(Node):
             self.target_pose_callback,
             10)
         
-        # +++ 添加一个Publisher，用于在按压完成后通知planner
+        # 按压完成后发布通知
         self.press_completion_publisher = self.create_publisher(String, '/button_press/completed', 10)
         
-        # 订阅AGV移动状态，用于禁止机械臂运动
-        self.agv_motion_status_subscriber = self.create_subscription(
+        # 订阅当前机器人状态
+        self.robot_status_subscriber = self.create_subscription(
             String,
-            '/agv/motion_status',
-            self.agv_motion_status_callback,
+            '/decision_maker/status',
+            self.robot_status_callback,
             10)
         
         # AGV移动状态标志
@@ -90,6 +90,10 @@ class ButtonFollower(Node):
         self.current_step = "idle" 
         self.trajectory_completed = False  
         
+        # _ADDED_ Trajectory caches for pre-planning
+        self.home_to_target_trajectory_cache = None
+        self.pre_planned_press_trajectory = None
+        
         self.pause_timer: Timer = None
         self.position_check_timer: Timer = None  
         
@@ -105,7 +109,7 @@ class ButtonFollower(Node):
         self.min_settle_time = 3.0  # 至少等待3秒再开始检查，确保轨迹执行完成
         
         # 按压相关参数
-        self.press_distance = 0.03  # 按压距离：3cm
+        self.press_distance = 0.06  # 按压距离：6cm
 
         # 定义Home位置的关节角度 
         self.home_joint_angles = [-1.0*math.pi/2.0, math.pi/2.0, math.pi/2.0, 0.0, 0.0, 0.0]
@@ -368,35 +372,37 @@ class ButtonFollower(Node):
             self.get_logger().error(f"Could not transform: {e}")
             self.reset_state()
 
-    def plan_to_pose(self, goal_pose: PoseStamped):
+    def plan_to_pose(self, goal_pose: PoseStamped, start_state_override: RobotState = None): # _MODIFIED_ Allow overriding start state
         if not self.planning_client.wait_for_service(timeout_sec=5.0):
             self.get_logger().error("Planning service '/plan_kinematic_path' not available.")
             self.reset_state()
             return
 
-        print('Filtered Joint State:')
-        print(self.filtered_joint_state)
-        if self.filtered_joint_state is None:
-            self.get_logger().error("Cannot plan, no current joint state has been received yet.")
-            self.reset_state()
-            return
+        # _MODIFIED_ Use override if provided, otherwise use current state
+        if start_state_override is None:
+            if self.filtered_joint_state is None:
+                self.get_logger().error("Cannot plan, no current joint state has been received yet.")
+                self.reset_state()
+                return
+            start_state = RobotState()
+            current_joint_state = JointState()
+            current_joint_state.header.stamp = self.get_clock().now().to_msg()
+            current_joint_state.header.frame_id = self.filtered_joint_state.header.frame_id
+            current_joint_state.name = self.filtered_joint_state.name[:]
+            current_joint_state.position = self.filtered_joint_state.position[:]
+            current_joint_state.velocity = self.filtered_joint_state.velocity[:]
+            current_joint_state.effort = self.filtered_joint_state.effort[:]
+            start_state.joint_state = current_joint_state
+        else:
+            self.get_logger().info("Using provided start state override for planning.")
+            start_state = start_state_override
 
         request = GetMotionPlan.Request()
         motion_plan_request = MotionPlanRequest()
         motion_plan_request.group_name = "jaka_arm"
         motion_plan_request.planner_id = "RRTstar"
         motion_plan_request.allowed_planning_time = 10.0
-
-        start_state = RobotState()
-        # 更新时间戳为当前时间，避免使用过旧的时间戳
-        current_joint_state = JointState()
-        current_joint_state.header.stamp = self.get_clock().now().to_msg()
-        current_joint_state.header.frame_id = self.filtered_joint_state.header.frame_id
-        current_joint_state.name = self.filtered_joint_state.name[:]
-        current_joint_state.position = self.filtered_joint_state.position[:]
-        current_joint_state.velocity = self.filtered_joint_state.velocity[:]
-        current_joint_state.effort = self.filtered_joint_state.effort[:]
-        start_state.joint_state = current_joint_state
+        
         motion_plan_request.start_state = start_state
 
         constraints = Constraints()
@@ -405,7 +411,7 @@ class ButtonFollower(Node):
         position_constraint.link_name = "link_a6"
         bounding_box = SolidPrimitive()
         bounding_box.type = SolidPrimitive.BOX
-        bounding_box.dimensions = [0.01, 0.01, 0.01] 
+        bounding_box.dimensions = [0.02, 0.02, 0.02] 
         position_constraint.constraint_region.primitives.append(bounding_box)
         position_constraint.constraint_region.primitive_poses.append(goal_pose.pose)
         position_constraint.weight = 1.0
@@ -428,7 +434,7 @@ class ButtonFollower(Node):
         future = self.planning_client.call_async(request)
         future.add_done_callback(self.planning_done_callback)
 
-    def plan_to_press(self):
+    def plan_to_press(self, start_state_override: RobotState = None): # _MODIFIED_ Allow overriding start state
         """规划到按压位置的路径"""
         if self.current_step != "planning_to_press":
             self.get_logger().error(f"plan_to_press called in wrong step: {self.current_step}")
@@ -445,29 +451,30 @@ class ButtonFollower(Node):
             self.reset_state()
             return
 
-        if self.filtered_joint_state is None:
-            self.get_logger().error("Cannot plan to press, no current joint state has been received yet.")
-            self.reset_state()
-            return
+        # _MODIFIED_ Use override if provided, otherwise use current state
+        if start_state_override is None:
+            if self.filtered_joint_state is None:
+                self.get_logger().error("Cannot plan to press, no current joint state has been received yet.")
+                self.reset_state()
+                return
+            start_state = RobotState()
+            current_joint_state = JointState()
+            current_joint_state.header.stamp = self.get_clock().now().to_msg()
+            current_joint_state.header.frame_id = self.filtered_joint_state.header.frame_id
+            current_joint_state.name = self.filtered_joint_state.name[:]
+            current_joint_state.position = self.filtered_joint_state.position[:]
+            current_joint_state.velocity = self.filtered_joint_state.velocity[:]
+            current_joint_state.effort = self.filtered_joint_state.effort[:]
+            start_state.joint_state = current_joint_state
+        else:
+            self.get_logger().info("Using provided start state override for press planning.")
+            start_state = start_state_override
 
         request = GetMotionPlan.Request()
         motion_plan_request = MotionPlanRequest()
         motion_plan_request.group_name = "jaka_arm"
-        # 使用更简单的规划器，对短距离移动更有效
         motion_plan_request.planner_id = "RRTConnectkConfigDefault"  
-        # 增加规划时间，因为按压位置可能更难到达
         motion_plan_request.allowed_planning_time = 15.0
-
-        start_state = RobotState()
-        # 更新时间戳为当前时间，避免使用过旧的时间戳
-        current_joint_state = JointState()
-        current_joint_state.header.stamp = self.get_clock().now().to_msg()
-        current_joint_state.header.frame_id = self.filtered_joint_state.header.frame_id
-        current_joint_state.name = self.filtered_joint_state.name[:]
-        current_joint_state.position = self.filtered_joint_state.position[:]
-        current_joint_state.velocity = self.filtered_joint_state.velocity[:]
-        current_joint_state.effort = self.filtered_joint_state.effort[:]
-        start_state.joint_state = current_joint_state
         motion_plan_request.start_state = start_state
 
         constraints = Constraints()
@@ -476,7 +483,7 @@ class ButtonFollower(Node):
         position_constraint.link_name = "link_a6"
         bounding_box = SolidPrimitive()
         bounding_box.type = SolidPrimitive.BOX
-        bounding_box.dimensions = [0.02, 0.02, 0.02]  
+        bounding_box.dimensions = [0.01, 0.01, 0.005]  
         position_constraint.constraint_region.primitives.append(bounding_box)
         position_constraint.constraint_region.primitive_poses.append(self.current_press_pose.pose)
         position_constraint.weight = 1.0
@@ -486,7 +493,6 @@ class ButtonFollower(Node):
         orientation_constraint.header.frame_id = self.current_press_pose.header.frame_id
         orientation_constraint.link_name = "link_a6"
         orientation_constraint.orientation = self.current_press_pose.pose.orientation
-        # 保持与target相同的方向约束权重，确保一致性
         orientation_constraint.absolute_x_axis_tolerance = 0.1
         orientation_constraint.absolute_y_axis_tolerance = 0.1
         orientation_constraint.absolute_z_axis_tolerance = 6.28
@@ -547,7 +553,7 @@ class ButtonFollower(Node):
         position_constraint.link_name = "link_a6"
         bounding_box = SolidPrimitive()
         bounding_box.type = SolidPrimitive.BOX
-        bounding_box.dimensions = [0.01, 0.01, 0.01]  # 1cm的容忍范围
+        bounding_box.dimensions = [0.02, 0.02, 0.02]  # 2cm的容忍范围
         position_constraint.constraint_region.primitives.append(bounding_box)
         position_constraint.constraint_region.primitive_poses.append(self.current_goal_pose.pose)
         position_constraint.weight = 1.0
@@ -557,8 +563,8 @@ class ButtonFollower(Node):
         orientation_constraint.header.frame_id = self.current_goal_pose.header.frame_id
         orientation_constraint.link_name = "link_a6"
         orientation_constraint.orientation = self.current_goal_pose.pose.orientation
-        orientation_constraint.absolute_x_axis_tolerance = 0.05
-        orientation_constraint.absolute_y_axis_tolerance = 0.05
+        orientation_constraint.absolute_x_axis_tolerance = 0.1
+        orientation_constraint.absolute_y_axis_tolerance = 0.1
         orientation_constraint.absolute_z_axis_tolerance = 3.14
         orientation_constraint.weight = 2.0
         constraints.orientation_constraints.append(orientation_constraint)
@@ -623,40 +629,64 @@ class ButtonFollower(Node):
         future.add_done_callback(self.planning_done_callback)
 
     def planning_done_callback(self, future):
+        # _MODIFIED_ This is the core logic change
         try:
             response = future.result()
             motion_plan_response = response.motion_plan_response
-            
-            if motion_plan_response.error_code.val == 1: # SUCCESS
-                if self.current_step == "planning_to_target":
-                    step_name = "to target"
-                elif self.current_step == "planning_to_press":
-                    step_name = "to press"
-                elif self.current_step == "planning_to_target_return":
-                    step_name = "to target return"
-                elif self.current_step == "planning_to_home":
-                    step_name = "to home"
-                else:
-                    step_name = "unknown"
-                
-                self.get_logger().info(f"Planning {step_name} successful. Executing trajectory...")
-                self.get_logger().info(f"Current step: {self.current_step}")
-                
-                # 更新步骤状态
-                if self.current_step == "planning_to_target":
-                    self.current_step = "executing_to_target"
-                elif self.current_step == "planning_to_press":
-                    self.current_step = "executing_to_press"
-                elif self.current_step == "planning_to_target_return":
-                    self.current_step = "executing_to_target_return"
-                elif self.current_step == "planning_to_home":
-                    self.current_step = "executing_to_home"
-                
-                self.trajectory_completed = False  # 重置完成标志
-                self.execute_trajectory(motion_plan_response.trajectory)
-            else:
-                self.get_logger().error(f"Planning failed with error code: {motion_plan_response.error_code}")
+
+            if motion_plan_response.error_code.val != 1:  # Not SUCCESS
+                self.get_logger().error(f"Planning failed in step '{self.current_step}' with error code: {motion_plan_response.error_code}")
                 self.reset_state()
+                return
+
+            if self.current_step == "planning_to_target":
+                self.get_logger().info("Planning to target successful. Caching trajectory.")
+                self.home_to_target_trajectory_cache = motion_plan_response.trajectory
+
+                # Extract the final state of the first plan to use as the start state for the second plan
+                last_joint_point = motion_plan_response.trajectory.joint_trajectory.points[-1]
+                press_plan_start_state = RobotState()
+                press_plan_start_state.joint_state.name = motion_plan_response.trajectory.joint_trajectory.joint_names
+                press_plan_start_state.joint_state.position = last_joint_point.positions
+
+                # Immediately start planning for the press motion
+                self.get_logger().info("Now pre-planning path from TARGET to PRESS...")
+                self.current_step = "planning_to_press"
+                self.plan_to_press(start_state_override=press_plan_start_state)
+                # Note: We do not execute yet. We wait for this second plan to finish.
+                return 
+
+            elif self.current_step == "planning_to_press":
+                self.get_logger().info("Pre-planning to press successful.")
+                self.pre_planned_press_trajectory = motion_plan_response.trajectory
+                
+                # Now that both plans are ready, execute the first one (Home -> Target)
+                if self.home_to_target_trajectory_cache:
+                    self.get_logger().info("Executing cached trajectory to TARGET...")
+                    self.current_step = "executing_to_target"
+                    self.trajectory_completed = False
+                    self.execute_trajectory(self.home_to_target_trajectory_cache)
+                else:
+                    self.get_logger().error("Press plan succeeded, but home_to_target_trajectory_cache is empty. This should not happen.")
+                    self.reset_state()
+                return
+
+            # Original logic for other planning stages
+            if self.current_step == "planning_to_target_return":
+                step_name = "to target return"
+                self.current_step = "executing_to_target_return"
+            elif self.current_step == "planning_to_home":
+                step_name = "to home"
+                self.current_step = "executing_to_home"
+            else:
+                self.get_logger().warn(f"Planning done in an unexpected step: {self.current_step}")
+                self.reset_state()
+                return
+            
+            self.get_logger().info(f"Planning {step_name} successful. Executing trajectory...")
+            self.trajectory_completed = False
+            self.execute_trajectory(motion_plan_response.trajectory)
+
         except Exception as e:
             self.get_logger().error(f"Planning service call failed: {e}")
             self.reset_state()
@@ -981,21 +1011,28 @@ class ButtonFollower(Node):
         self.get_logger().info("Home pause timer created (5 seconds)")
 
     def proceed_to_press_step(self):
-        # 定时器已在包装器中被取消和销毁
+        # _MODIFIED_ Use pre-planned trajectory instead of planning now
         self.get_logger().info("2-second pause timer triggered")
-        self.log_current_state("Before Press Planning")
+        self.log_current_state("Before Press Execution")
 
-        # 确认前一步已完成
         if not self.trajectory_completed or self.current_step != "pausing_at_target":
             self.get_logger().error(f"Invalid state transition. Current step: {self.current_step}, Trajectory completed: {self.trajectory_completed}")
             self.reset_state()
             return
 
-        self.get_logger().info("STEP 2 STARTING: 2-second pause completed. Now planning path to PRESS position...")
-        self.current_step = "planning_to_press"
-        self.trajectory_completed = False  # 重置完成标志
-
-        self.plan_to_press()
+        # Check if we have a pre-planned trajectory
+        if self.pre_planned_press_trajectory is not None:
+            self.get_logger().info("STEP 2 STARTING: Using pre-planned trajectory to PRESS position...")
+            self.current_step = "executing_to_press"
+            self.trajectory_completed = False
+            self.execute_trajectory(self.pre_planned_press_trajectory)
+        else:
+            # Fallback to original behavior if pre-planning failed for some reason
+            self.get_logger().warn("Pre-planned trajectory not available. Falling back to real-time planning.")
+            self.get_logger().info("STEP 2 STARTING: Now planning path to PRESS position...")
+            self.current_step = "planning_to_press"
+            self.trajectory_completed = False
+            self.plan_to_press()
 
     def proceed_to_target_step(self):
         # 定时器已在包装器中被取消和销毁
@@ -1122,14 +1159,12 @@ class ButtonFollower(Node):
 
     def reset_state(self):
         """重置所有状态标志，以便开始下一次循环"""
-        # === 【核心修改】重置状态时也要取消任何活动的定时器 ===
         if self.pause_timer is not None and not self.pause_timer.cancelled:
             self.get_logger().info("Cancelling active pause timer due to state reset.")
             self.pause_timer.cancel()
             self.pause_timer.destroy()
             self.pause_timer = None
 
-        # 取消位置检查定时器
         if self.position_check_timer is not None and not self.position_check_timer.cancelled:
             self.get_logger().info("Cancelling active position check timer due to state reset.")
             self.position_check_timer.cancel()
@@ -1141,10 +1176,15 @@ class ButtonFollower(Node):
         self.is_executing = False
         self.is_going_home = False
         self.current_goal_pose = None
-        self.current_press_pose = None  # 清理按压位置
-        self.target_joint_state = None  # 清理保存的target关节状态
+        self.current_press_pose = None
+        self.target_joint_state = None
         self.current_step = "idle"
         self.trajectory_completed = False
+        
+        # _ADDED_ Clear trajectory caches on reset
+        self.home_to_target_trajectory_cache = None
+        self.pre_planned_press_trajectory = None
+
         self.get_logger().info("Ready for next target.")
 
     def publish_goal_marker(self, pose_stamped: PoseStamped):
