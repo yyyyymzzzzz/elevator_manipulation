@@ -109,7 +109,7 @@ class ButtonFollower(Node):
         self.min_settle_time = 3.0  # 至少等待3秒再开始检查，确保轨迹执行完成
         
         # 按压相关参数
-        self.press_distance = 0.06  # 按压距离：6cm
+        self.press_distance = 0.08  # 按压距离：6cm
 
         # 定义Home位置的关节角度 
         self.home_joint_angles = [-1.0*math.pi/2.0, math.pi/2.0, math.pi/2.0, 0.0, 0.0, 0.0]

@@ -34,6 +34,7 @@ class TaskAssignment(Node):
         # 状态跟踪
         self.waiting_for_navigation = False
         self.waiting_for_button = False
+        self.waiting_for_door = False
         self.is_moving = False
         
         # 设置ROS接口
@@ -62,6 +63,13 @@ class TaskAssignment(Node):
             '/decision/target_button',
             10
         )
+
+        # 发布器 - 发送等待开门指令
+        self.door_wait_publisher = self.create_publisher(
+            String,
+            '/decision/wait_for_door',
+            10
+        )
         
         # 发布器 - 发布任务状态
         self.task_status_publisher = self.create_publisher(
@@ -85,6 +93,14 @@ class TaskAssignment(Node):
             self.button_completion_callback,
             10
         )
+
+        # 订阅器 - 电梯门状态信号
+        self.door_status_subscriber = self.create_subscription(
+            String,
+            '/elevator/door_status',
+            self.door_status_callback,
+            10
+        )
     
     def load_tasks(self):
         """从YAML文件加载任务清单"""
@@ -98,15 +114,19 @@ class TaskAssignment(Node):
             with open(config_path, 'r', encoding='utf-8') as file:
                 config_data = yaml.safe_load(file)
             
-            # 提取任务列表
+            # 提取任务列表 (更灵活的方式)
             for task_data in config_data.get('tasks', []):
                 for step in task_data.get('steps', []):
-                    self.task_list.append({
-                        'type': step.get('task_type'),
-                        'location': step.get('location'),
-                        'button': step.get('button'),
-                        'description': f"{task_data.get('name', '')} - {step.get('step_id', '')}"
-                    })
+                    # 复制YAML中的所有任务参数
+                    new_task = step.copy()
+                    
+                    # 为了内部代码一致性，将'task_type'重命名为'type'
+                    new_task['type'] = new_task.pop('task_type', None)
+                    
+                    # 添加自动生成的描述信息
+                    new_task['description'] = f"{task_data.get('name', '')} - {step.get('step_id', '')}"
+                    
+                    self.task_list.append(new_task)
             
             self.get_logger().info(f"成功加载任务配置文件: {config_path}")
             
@@ -119,16 +139,23 @@ class TaskAssignment(Node):
         default_config = {
             'tasks': [
                 {
-                    'name': '电梯按钮操作任务',
+                    'name': '完整电梯操作流程示例',
                     'steps': [
-                        {'task_type': 'navigation', 'location': 'A', 'step_id': '导航到A点'},
-                        {'task_type': 'button_press', 'location': 'A', 'button': '1', 'step_id': '按压按钮1'},
-                        {'task_type': 'button_press', 'location': 'A', 'button': '2', 'step_id': '按压按钮2'},
-                        {'task_type': 'button_press', 'location': 'A', 'button': '3', 'step_id': '按压按钮3'},
-                        {'task_type': 'navigation', 'location': 'B', 'step_id': '导航到B点'},
-                        {'task_type': 'button_press', 'location': 'B', 'button': '2', 'step_id': '按压按钮2'},
-                        {'task_type': 'button_press', 'location': 'B', 'button': '4', 'step_id': '按压按钮4'},
-                        {'task_type': 'button_press', 'location': 'B', 'button': 'Open', 'step_id': '按压开门按钮'},
+                        {'task_type': 'navigation', 'location': 'Elevator_Door_Outside_F1', 'step_id': '导航到1楼电梯门外'},
+                        {'task_type': 'button_press', 'button': 'Up', 'step_id': '按压向上按钮'},
+                        {'task_type': 'wait_for_door', 'step_id': '等待电梯门开启'},
+                        {'task_type': 'motion_sequence', 'sequence': 'enter_elevator', 'step_id': '进入电梯并转向'},
+                        {'task_type': 'button_press', 'button': '5', 'step_id': '按压楼层按钮5'},
+                        {'task_type': 'motion_sequence', 'sequence': 'panel_to_door', 'step_id': '电梯内转向门口'},
+                        {'task_type': 'wait_for_door', 'step_id': '等待电梯门开启'},
+                        {
+                            'task_type': 'exit_and_update_pose', 
+                            'map_name': 'my_building_map',  # 机器人中地图的名称
+                            'floor': '5',                  # 目标楼层
+                            'location': 'F5_Lobby',        # 目标楼层的标定点
+                            'step_id': '驶出电梯并更新位姿到5楼大厅'
+                        },
+                        {'task_type': 'navigation', 'location': 'Destination_On_F5', 'step_id': '导航到5楼的目的地'},
                     ]
                 }
             ]
@@ -156,7 +183,7 @@ class TaskAssignment(Node):
 
         """主循环 - 检查状态并执行下一个任务"""
         # 如果正在等待导航或按钮完成，则不执行新任务
-        if self.waiting_for_navigation or self.waiting_for_button:
+        if self.waiting_for_navigation or self.waiting_for_button or self.waiting_for_door:
             return
         
         # 检查是否还有任务要执行
@@ -183,6 +210,12 @@ class TaskAssignment(Node):
             self.execute_navigation_task(task)
         elif task_type == 'button_press':
             self.execute_button_press_task(task)
+        elif task_type == 'wait_for_door':
+            self.execute_wait_for_door_task(task)
+        elif task_type == 'motion_sequence':
+            self.execute_motion_sequence_task(task)
+        elif task_type == 'exit_and_update_pose':
+            self.execute_exit_and_update_pose_task(task)
         else:
             self.get_logger().error(f"未知任务类型: {task_type}")
             self.move_to_next_task()
@@ -234,6 +267,85 @@ class TaskAssignment(Node):
         # 设置等待按钮完成的标志
         self.waiting_for_button = True
     
+    def execute_wait_for_door_task(self, task: Dict):
+        """执行等待开门任务"""
+        self.get_logger().info("⏳ 等待电梯门开启...")
+        
+        # 发送指令给AGV控制器，令其开始检测门的状态
+        door_msg = String()
+        door_msg.data = json.dumps({
+            'command': 'wait_for_door_open',
+            'timestamp': time.time()
+        })
+        self.door_wait_publisher.publish(door_msg)
+        
+        # 设置等待标志
+        self.waiting_for_door = True
+
+    def execute_motion_sequence_task(self, task: Dict):
+        """执行预定义的运动序列任务（进入电梯、转向等）"""
+        sequence = task.get('sequence')
+        if not sequence:
+            self.get_logger().error("运动序列任务缺少 'sequence' 参数")
+            self.move_to_next_task()
+            return
+        
+        self.get_logger().info(f"🚗 开始执行运动序列: {sequence}")
+        
+        # 复用导航话题，发送一个包含新命令的JSON消息
+        msg = String()
+        msg.data = json.dumps({
+            'command': 'execute_sequence',
+            'sequence_name': sequence,
+            'timestamp': time.time()
+        })
+        self.navigation_publisher.publish(msg)
+        
+        # 复用导航等待标志，因为完成信号将通过 /agv/status topic 发来
+        self.waiting_for_navigation = True
+
+    def execute_exit_and_update_pose_task(self, task: Dict):
+        """执行驶出电梯并更新地图位姿的任务"""
+        map_name = task.get('map_name')
+        target_floor = task.get('floor')
+        target_location = task.get('location')
+
+        if not all([map_name, target_floor, target_location]):
+            self.get_logger().error("驶出并更新位姿任务缺少 'map_name', 'floor', 或 'location' 参数")
+            self.move_to_next_task()
+            return
+
+        self.get_logger().info(
+            f"🚀 开始驶出电梯，完成后将更新位姿到地图 '{map_name}' 的楼层 '{target_floor}' 的 '{target_location}' 点"
+        )
+        
+        msg = String()
+        msg.data = json.dumps({
+            'command': 'exit_and_update_pose',
+            'map_name': map_name,
+            'target_floor': str(target_floor),
+            'target_location': target_location,
+            'timestamp': time.time()
+        })
+        self.navigation_publisher.publish(msg)
+        
+        # 同样复用导航等待标志
+        self.waiting_for_navigation = True
+
+    def door_status_callback(self, msg: String):
+        """电梯门状态回调"""
+        if not self.waiting_for_door:
+            return
+        
+        try:
+            data = json.loads(msg.data)
+            if data.get('status') == 'opened':
+                self.get_logger().info("✅ 电梯门已开启")
+                self.waiting_for_door = False
+                self.move_to_next_task()
+        except (json.JSONDecodeError, AttributeError):
+            self.get_logger().warn("无法解析电梯门状态消息")
+
     def agv_status_callback(self, msg: String):
         """AGV状态回调"""
         if not self.waiting_for_navigation:

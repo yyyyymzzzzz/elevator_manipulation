@@ -7,9 +7,9 @@ import math
 ROBOT_IP = "192.168.10.10"
 ROBOT_PORT = 31001
 # 当障碍物距离小于此值时，直接采用中心点测量法，认为最近的就是正前方的
-NEAR_OBSTACLE_THRESHOLD = 0.6
+NEAR_OBSTACLE_THRESHOLD = 0.1
 # 当障碍物较远时，在机器人前方多远处设置探测点
-FAR_PROBE_DISTANCE = 0.5 
+FAR_PROBE_DISTANCE = 0.3 
 
 class RobustDistanceMeter:
     def __init__(self, ip, port):

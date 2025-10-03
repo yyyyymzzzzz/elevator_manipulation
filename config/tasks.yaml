@@ -1,77 +1,50 @@
-# 简化的任务配置文件
-# 定义电梯按钮操作的任务序列
-
 tasks:
-  - name: "电梯按钮操作任务"
+  - name: "完整的多楼层电梯测试"
     steps:
-      - step_id: "导航到A点"
+      - step_id: "导航到1楼的A点"
         task_type: "navigation"
-        location: "A"
-      
-      - step_id: "按压按钮1"
-        task_type: "button_press"
-        location: "A"
-        button: "1"
-
-      - step_id: "按压按钮2"
-        task_type: "button_press"
-        location: "A"
-        button: "2"
-
-      - step_id: "按压按钮3"
-        task_type: "button_press"
-        location: "A"
-        button: "3"
-
-      - step_id: "按压按钮5"
-        task_type: "button_press"
-        location: "A"
-        button: "5"
-
-      - step_id: "按压按钮6"
-        task_type: "button_press"
-        location: "A"
-        button: "6"
-      
-      - step_id: "按压按钮7"
-        task_type: "button_press"
-        location: "A"
-        button: "7"
-
-      - step_id: "导航到B点"
+        location: "A_Point_F1"   
+      # --- 阶段 1: 在1楼呼叫电梯 ---
+      - step_id: "导航到1楼电梯面板前"
         task_type: "navigation"
-        location: "B"
-      
-      - step_id: "按压按钮2"
-        task_type: "button_press"
-        location: "B"
-        button: "2"
+        location: "F1_Panel"  
 
-      - step_id: "按压按钮4"
+      - step_id: "按压'上行'按钮"
         task_type: "button_press"
-        location: "B"
-        button: "4"
+        button: "1"         
 
-      - step_id: "按压按钮Open"
-        task_type: "button_press"
-        location: "B"
-        button: "Open"
-      
-      - step_id: "按压按钮Close"
-        task_type: "button_press"
-        location: "B"
-        button: "Close"
-      
-      - step_id: "按压按钮Phone"
-        task_type: "button_press"
-        location: "B"
-        button: "Phone"
-      
-      - step_id: "按压按钮Alarm"
-        task_type: "button_press"
-        location: "B"
-        button: "Alarm"
-
-      - step_id: "导航到home点"
+      # --- 阶段 2: 等待并进入电梯 ---
+      - step_id: "导航到1楼电梯门前等待"
         task_type: "navigation"
-        location: "home"
+        location: "F1_Door_Outside"
+
+      - step_id: "等待电梯门开启"
+        task_type: "wait_for_door"
+
+      - step_id: "进入电梯并转向内部面板"
+        task_type: "motion_sequence"
+        sequence: "enter_elevator"  
+
+      # --- 阶段 3: 在电梯内选择楼层 ---
+      - step_id: "按压楼层'2'"
+        task_type: "button_press"
+        button: "2"        
+
+      # --- 阶段 4: 等待并离开电梯 ---
+      - step_id: "从内部面板转向电梯门"
+        task_type: "motion_sequence"
+        sequence: "panel_to_door"  
+
+      - step_id: "到达2楼后，等待电梯门开启"
+        task_type: "wait_for_door"
+
+      - step_id: "驶出电梯并更新位姿到2楼"
+        task_type: "exit_and_update_pose"
+        map_name: "test_floor_2"       
+        floor: "2"                       # 目标楼层
+        location: "F2_Door_Outside"      
+
+      # --- 阶段 5: 在2楼执行任务 ---
+      - step_id: "导航到2楼的B点"
+        task_type: "navigation"
+        location: "B_Point_F2"  
