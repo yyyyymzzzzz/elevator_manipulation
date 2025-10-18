@@ -36,6 +36,9 @@ class TaskAssignment(Node):
         self.waiting_for_button = False
         self.waiting_for_door = False
         self.is_moving = False
+
+        # 新增：用于管理多步任务的状态
+        self.button_press_step = 'idle'  # 'idle', 'lowering_head', 'pressing_button', 'resetting_head'
         
         # 设置ROS接口
         self.setup_ros_interfaces()
@@ -64,6 +67,13 @@ class TaskAssignment(Node):
             10
         )
 
+        # 发布器 - 发送头部控制目标
+        self.head_control_publisher = self.create_publisher(
+            String,
+            '/decision/body_head_goal',
+            10
+        )
+
         # 发布器 - 发送等待开门指令
         self.door_wait_publisher = self.create_publisher(
             String,
@@ -86,6 +96,14 @@ class TaskAssignment(Node):
             10
         )
         
+        # 订阅器 - 头部控制完成信号
+        self.head_control_completion_subscriber = self.create_subscription(
+            String,
+            '/decision/body_head_completed',
+            self.head_control_completion_callback,
+            10
+        )
+
         # 订阅器 - 按钮按压完成信号
         self.button_completion_subscriber = self.create_subscription(
             String,
@@ -243,30 +261,27 @@ class TaskAssignment(Node):
         self.waiting_for_navigation = True
     
     def execute_button_press_task(self, task: Dict):
-        """执行按钮按压任务"""
-        button = task.get('button')
-        location = task.get('location', '')
+        """执行按钮按压任务，这是一个多步骤过程"""
+        self.get_logger().info("开始执行按按钮序列...")
+        self.waiting_for_button = True  # 启动整个序列的等待标志
+        self.button_press_step = 'lowering_head'
         
-        if not button:
-            self.get_logger().error("按钮任务缺少目标按钮")
-            self.move_to_next_task()
-            return
-        
-        self.get_logger().info(f"👆 开始按压按钮: {button} (位置: {location})")
-        
-        # 发送按钮目标指令（使用现有接口）
-        button_msg = String()
-        button_msg.data = json.dumps({
-            'target_button': button,
-            'location': location,
-            'command': 'press_button',
+        # 步骤1: 低头
+        self.get_logger().info("步骤 1/3: 低头以便观察按钮")
+        self._send_head_command(30.0)
+
+    def _send_head_command(self, pitch: float):
+        """发送头部控制指令的辅助函数"""
+        self.get_logger().info("头部开始运动，is_moving设置为True")
+        self.is_moving = True
+        msg = String()
+        msg.data = json.dumps({
+            'command': 'set_pitch',
+            'pitch': pitch,
             'timestamp': time.time()
         })
-        self.button_target_publisher.publish(button_msg)
-        
-        # 设置等待按钮完成的标志
-        self.waiting_for_button = True
-    
+        self.head_control_publisher.publish(msg)
+
     def execute_wait_for_door_task(self, task: Dict):
         """执行等待开门任务"""
         self.get_logger().info("⏳ 等待电梯门开启...")
@@ -332,6 +347,49 @@ class TaskAssignment(Node):
         # 同样复用导航等待标志
         self.waiting_for_navigation = True
 
+    def head_control_completion_callback(self, msg: String):
+        """头部控制完成回调"""
+        if not self.waiting_for_button or self.button_press_step not in ['lowering_head', 'resetting_head']:
+            return
+
+        try:
+            data = json.loads(msg.data)
+            if data.get('status') != 'completed':
+                self.get_logger().error("头部姿态调整失败，中止按钮按压序列")
+                self.is_moving = False # 运动结束
+                self.reset_button_sequence()
+                self.move_to_next_task()
+                return
+
+            if self.button_press_step == 'lowering_head':
+                self.get_logger().info("✅ 头部已放低，is_moving设置为False，准备按按钮")
+                self.is_moving = False # 运动结束
+                self.button_press_step = 'pressing_button'
+                
+                # 步骤2: 按按钮
+                current_task = self.task_list[self.current_task_index]
+                button = current_task.get('button')
+                location = current_task.get('location', '')
+                self.get_logger().info(f"步骤 2/3: 按压按钮 '{button}'")
+                
+                button_msg = String()
+                button_msg.data = json.dumps({
+                    'target_button': button,
+                    'location': location,
+                    'command': 'press_button',
+                    'timestamp': time.time()
+                })
+                self.button_target_publisher.publish(button_msg)
+
+            elif self.button_press_step == 'resetting_head':
+                self.get_logger().info("✅ 头部已恢复姿态，按钮按压序列完成")
+                self.is_moving = False # 运动结束
+                self.reset_button_sequence()
+                self.move_to_next_task()
+
+        except (json.JSONDecodeError, AttributeError):
+            self.get_logger().warn("无法解析头部控制完成消息")
+
     def door_status_callback(self, msg: String):
         """电梯门状态回调"""
         if not self.waiting_for_door:
@@ -378,19 +436,27 @@ class TaskAssignment(Node):
     
     def button_completion_callback(self, msg: String):
         """按钮完成回调"""
-        if not self.waiting_for_button:
+        if not self.waiting_for_button or self.button_press_step != 'pressing_button':
             return
         
         if msg.data == "cycle_complete":
             self.get_logger().info("✅ 按钮操作完成")
-            self.waiting_for_button = False
-            self.move_to_next_task()
+            self.button_press_step = 'resetting_head'
+            
+            # 步骤3: 恢复头部姿态
+            self.get_logger().info("步骤 3/3: 恢复头部姿态")
+            self._send_head_command(0.0)
+
         elif msg.data == "failed":
-            self.get_logger().error("❌ 按钮操作失败")
-            self.waiting_for_button = False
-            # 可以选择重试或跳过
-            self.move_to_next_task()
+            self.get_logger().error("❌ 按钮操作失败，将尝试恢复头部姿态并继续")
+            self.button_press_step = 'resetting_head'
+            self._send_head_command(0.0) # 即使失败也要抬头
     
+    def reset_button_sequence(self):
+        """重置按钮按压序列的状态"""
+        self.waiting_for_button = False
+        self.button_press_step = 'idle'
+
     def move_to_next_task(self):
         """移动到下一个任务"""
         self.current_task_index += 1
@@ -402,6 +468,8 @@ class TaskAssignment(Node):
             'total_tasks': len(self.task_list),
             'waiting_for_navigation': self.waiting_for_navigation,
             'waiting_for_button': self.waiting_for_button,
+            'waiting_for_door': self.waiting_for_door,
+            'button_press_step': self.button_press_step,
             'is_moving': self.is_moving,
             'timestamp': time.time()
         }

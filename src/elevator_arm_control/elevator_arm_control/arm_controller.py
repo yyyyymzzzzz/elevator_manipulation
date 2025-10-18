@@ -6,7 +6,7 @@ from rclpy.action import ActionServer
 from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from control_msgs.action import FollowJointTrajectory
-from std_msgs.msg import Header, Float64MultiArray
+from std_msgs.msg import Header, Float64MultiArray, String
 from std_srvs.srv import SetBool
 import math
 import jkrc
@@ -55,8 +55,23 @@ class ArmController(Node):
             10
         )
         
+        # 订阅来自决策器的头部控制命令
+        self.head_control_subscriber = self.create_subscription(
+            String,
+            '/decision/body_head_goal',
+            self.head_control_callback,
+            10
+        )
+        
         # 发布最终关节状态 (给RViz和MoveIt使用)
         self.joint_publisher = self.create_publisher(JointState, '/joint_states', 10)
+        
+        # 发布头部控制完成状态
+        self.head_control_completion_publisher = self.create_publisher(
+            String,
+            '/decision/body_head_completed',
+            10
+        )
         
         # 服务：机械臂使能/禁用
         self.arm_enable_service = self.create_service(
@@ -84,6 +99,10 @@ class ArmController(Node):
         self.position_history = []  # 存储最近几次的位置读取
         self.stable_position = [0.0] * 6  # 稳定的位置
         self.position_read_errors = 0  # 连续读取错误计数
+        
+        # 头部姿态自动恢复定时器
+        self.head_reset_timer = None
+        self.head_reset_delay = 15.0 # 15秒后自动恢复
         
         # 初始化机械臂连接
         self.init_arm_connection()
@@ -166,16 +185,27 @@ class ArmController(Node):
             l_2_deg = l_2_pos * 180.0 / math.pi
             l_2_deg = max(-160, min(160, l_2_deg))  # 限制范围（约对应±2.79弧度）
             
+            # 关键修复：在发送命令时，保持l3和l4的当前位置，而不是强制设为0
+            # 从 self.current_joint_positions 获取当前 l3 和 l4 的角度（弧度）
+            l_3_idx = self.joint_names.index('l_3')
+            l_4_idx = self.joint_names.index('l_4')
+            current_l3_rad = self.current_joint_positions[l_3_idx]
+            current_l4_rad = self.current_joint_positions[l_4_idx]
+            
+            # 将其转换为度数以匹配API要求
+            current_l3_deg = current_l3_rad * 180.0 / math.pi
+            current_l4_deg = current_l4_rad * 180.0 / math.pi
+
             moveto_url = f"{self.body_api_url}/moveto"
             # 发送4个关节位置：[升降, 腰部旋转, 头部旋转, 头部俯仰]
-            # 只控制前两个，后两个保持0
+            # 现在l3和l4使用当前值，而不是0.0
             payload = {
-                "pos": [l_1_mm, l_2_deg, 0.0, 0.0],
+                "pos": [l_1_mm, l_2_deg, current_l3_deg, current_l4_deg],
                 "vel": 50,  # 降低速度避免超时
                 "acc": 50   # 降低加速度
             }
             
-            self.get_logger().info(f'发送Body命令: l_1={l_1_pos:.3f}m->{l_1_mm:.1f}mm, l_2={l_2_pos:.3f}rad->{l_2_deg:.1f}°')
+            self.get_logger().info(f'发送Body命令: l_1={l_1_pos:.3f}m, l_2={l_2_pos:.3f}rad, 保持 l_3={current_l3_deg:.1f}°, l_4={current_l4_deg:.1f}°')
             
             # 增加超时时间，并添加重试机制
             max_retries = 2
@@ -204,6 +234,90 @@ class ArmController(Node):
             self.get_logger().error(f'Body命令发送异常: {e}')
             return False
     
+    def head_control_callback(self, msg):
+        """接收并处理头部控制命令"""
+        # 收到新命令时，取消之前的恢复定时器
+        if self.head_reset_timer:
+            self.head_reset_timer.cancel()
+            self.head_reset_timer = None
+
+        try:
+            data = json.loads(msg.data)
+            command = data.get('command')
+            
+            if command == 'set_pitch':
+                pitch_deg = data.get('pitch')
+                if pitch_deg is None:
+                    self.get_logger().error("头部控制命令缺少 'pitch' 参数")
+                    self.publish_head_completion(False) # 发布失败状态
+                    return
+                
+                self.get_logger().info(f"收到头部俯仰角调整命令: {pitch_deg} 度")
+                
+                # 获取当前其他关节的位置，避免它们移动
+                l_1_idx = self.joint_names.index('l_1')
+                l_2_idx = self.joint_names.index('l_2')
+                l_3_idx = self.joint_names.index('l_3')
+                
+                # 从rad/m转换回mm/deg
+                current_l1_mm = self.current_joint_positions[l_1_idx] * 1000.0
+                current_l2_deg = self.current_joint_positions[l_2_idx] * 180.0 / math.pi
+                current_l3_deg = self.current_joint_positions[l_3_idx] * 180.0 / math.pi
+                
+                # 构造API负载
+                payload = {
+                    "pos": [current_l1_mm, current_l2_deg, current_l3_deg, float(pitch_deg)],
+                    "vel": 100,  # 使用一个较慢的速度以保证平滑
+                    "acc": 100
+                }
+                
+                # 发送命令
+                moveto_url = f"{self.body_api_url}/moveto"
+                response = requests.post(moveto_url, json=payload, timeout=20) # 增加超时
+                
+                if response.status_code == 200:
+                    self.get_logger().info("头部姿态调整成功")
+                    self.publish_head_completion(True)
+                else:
+                    self.get_logger().error(f"头部姿态调整失败: HTTP {response.status_code}")
+                    self.publish_head_completion(False)
+
+        except (json.JSONDecodeError, KeyError) as e:
+            self.get_logger().error(f"解析头部控制命令失败: {e}")
+            self.publish_head_completion(False)
+        except Exception as e:
+            self.get_logger().error(f"执行头部控制时发生未知错误: {e}")
+            self.publish_head_completion(False)
+
+    def publish_head_completion(self, success: bool):
+        """发布头部控制完成状态"""
+        completion_msg = String()
+        status = 'completed' if success else 'failed'
+        completion_msg.data = json.dumps({'status': status})
+        self.head_control_completion_publisher.publish(completion_msg)
+
+    def reset_head_pitch(self):
+        """定时器回调，用于将头部俯仰角恢复到0度"""
+        self.get_logger().info("自动恢复头部姿态到0度...")
+        
+        # 先取消定时器，避免重复执行
+        if self.head_reset_timer:
+            self.head_reset_timer.cancel()
+            self.head_reset_timer = None
+            
+        # 构造一个去0度的指令
+        reset_msg = String()
+        reset_msg.data = json.dumps({
+            'command': 'set_pitch',
+            'pitch': 0.0
+        })
+        
+        # 调用自身的回调函数来执行这个指令
+        # 注意：这里不会再触发新的定时器，因为目标角度是0
+        self.head_control_callback(reset_msg)
+        self.get_logger().info("已发送头部恢复指令。")
+
+
     def reconnect_and_enable(self):
         """重新连接并使能机械臂"""
         try:
@@ -287,11 +401,11 @@ class ArmController(Node):
                 if not success:
                     self.get_logger().warn(f"Body轨迹点 {i+1} 执行失败")
                 
-                # 更新关节状态
-                l_1_full_idx = self.joint_names.index('l_1')
-                l_2_full_idx = self.joint_names.index('l_2')
-                self.current_joint_positions[l_1_full_idx] = l_1_pos
-                self.current_joint_positions[l_2_full_idx] = l_2_pos
+                # 移除此处的状态更新，因为它使用的是目标值而非实际值
+                # l_1_full_idx = self.joint_names.index('l_1')
+                # l_2_full_idx = self.joint_names.index('l_2')
+                # self.current_joint_positions[l_1_full_idx] = l_1_pos
+                # self.current_joint_positions[l_2_full_idx] = l_2_pos
                 
                 # 轨迹点间等待
                 # if i < len(msg.points) - 1:
@@ -382,30 +496,42 @@ class ArmController(Node):
                 positions = parsed_json["pos"]
                 l_1_mm = positions[0] if len(positions) > 0 else 0.0
                 l_2_deg = positions[1] if len(positions) > 1 else 0.0
-            elif isinstance(parsed_json, list) and len(parsed_json) >= 2:
+                l_3_deg = positions[2] if len(positions) > 2 else 0.0
+                l_4_deg = positions[3] if len(positions) > 3 else 0.0
+            elif isinstance(parsed_json, list) and len(parsed_json) >= 4:
                 # 格式2: [{"pos": value1}, {"pos": value2}, ...]
                 l_1_mm = parsed_json[0].get("pos", 0.0) if isinstance(parsed_json[0], dict) else 0.0
                 l_2_deg = parsed_json[1].get("pos", 0.0) if isinstance(parsed_json[1], dict) else 0.0
+                l_3_deg = parsed_json[2].get("pos", 0.0) if isinstance(parsed_json[2], dict) else 0.0
+                l_4_deg = parsed_json[3].get("pos", 0.0) if isinstance(parsed_json[3], dict) else 0.0
             else:
-                self.get_logger().warn(f"Body状态格式不正确: {parsed_json}")
+                self.get_logger().warn(f"Body状态格式不正确或数据不完整: {parsed_json}")
                 return
 
             # 转换为关节空间
             # l_1: prismatic关节，API返回mm，URDF需要米
             l_1_rad = l_1_mm / 1000.0  # mm转换为米
+            # l_2, l_3, l_4: revolute关节, API返回度, URDF需要弧度
             l_2_rad = l_2_deg * math.pi / 180.0  # deg转rad
+            l_3_rad = l_3_deg * math.pi / 180.0  # deg转rad
+            l_4_rad = l_4_deg * math.pi / 180.0  # deg转rad
 
             # 限制关节值在URDF定义的范围内
             l_1_rad = max(0.0, min(0.4, l_1_rad))  # l_1范围: 0-0.4米
             l_2_rad = max(-2.7925, min(2.7925, l_2_rad))  # l_2范围: ±2.7925弧度
-
+            # l_3, l_4 范围待定, 暂时不限制
+            
             # 更新关节状态
             l_1_idx = self.joint_names.index('l_1')
             l_2_idx = self.joint_names.index('l_2')
+            l_3_idx = self.joint_names.index('l_3')
+            l_4_idx = self.joint_names.index('l_4')
             self.current_joint_positions[l_1_idx] = l_1_rad
             self.current_joint_positions[l_2_idx] = l_2_rad
+            self.current_joint_positions[l_3_idx] = l_3_rad
+            self.current_joint_positions[l_4_idx] = l_4_rad
 
-            self.get_logger().debug(f"Body状态更新: l_1={l_1_mm}mm->({l_1_rad:.3f}m), l_2={l_2_deg}deg->({l_2_rad:.3f}rad)")
+            self.get_logger().debug(f"Body状态更新: l_1={l_1_rad:.3f}m, l_2={l_2_rad:.3f}rad, l_3={l_3_rad:.3f}rad, l_4={l_4_rad:.3f}rad")
 
         except requests.exceptions.Timeout:
             self.get_logger().warn("获取Body状态超时")
@@ -607,8 +733,8 @@ class ArmController(Node):
             self.get_logger().info(f'执行关节命令 (URDF): {[f"{j:.3f}" for j in urdf_joint_positions]}')
             self.get_logger().info(f'执行关节命令 (机器人): {[f"{j:.3f}" for j in robot_joint_positions]}')
             
-            # 更新当前关节位置（6DOF机械臂部分）- 使用URDF角度
-            self.current_joint_positions[7:13] = urdf_joint_positions  # l_a1到l_a6的位置
+            # 移除此处的状态更新，因为它使用的是目标值而非实际值
+            # self.current_joint_positions[7:13] = urdf_joint_positions  # l_a1到l_a6的位置
             
             # 记录这次命令 - 使用机器人角度
             self.last_joint_command = robot_joint_positions.copy()
