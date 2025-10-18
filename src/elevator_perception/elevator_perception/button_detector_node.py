@@ -4,6 +4,9 @@ from ultralytics import YOLO
 import cv2
 import torch
 import json
+import os
+import time
+from datetime import datetime
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
 
@@ -13,7 +16,7 @@ class ButtonDetector(Node):
         self.declare_parameters(
             namespace='',
             parameters=[
-                ('model_path', '/home/ymz/Workspace/elevator_manipulation/model/result/AdamW/weights/best.pt'),
+                ('model_path', '/home/nvidia/Workspace/elevator_manipulation/model/result/AdamW/weights/best.pt'),
                 ('enable_roi_crop', True),  # 启用ROI裁剪，但用于多窗口检测
                 ('roi_x_ratio', 0.2), 
                 ('roi_y_ratio', 0.1), 
@@ -23,7 +26,10 @@ class ButtonDetector(Node):
                 ('resize_scale', 2.0), 
                 ('confidence_threshold', 0.5),
                 ('enable_multi_window', True),  # 启用多窗口检测
-                ('window_overlap_ratio', 0.5)  # 增加窗口重叠比例，确保边缘覆盖
+                ('window_overlap_ratio', 0.5),  # 增加窗口重叠比例，确保边缘覆盖
+                ('enable_recording', False), # 控制是否启用内录功能
+                ('recording_save_path', '/home/nvidia/Workspace/elevator_manipulation/data/dataset'), # 内录图像保存路径
+                ('recording_fps', 5.0) # 内录采集帧率
             ]
         )
         
@@ -42,6 +48,15 @@ class ButtonDetector(Node):
         self.enable_multi_window = self.get_parameter('enable_multi_window').get_parameter_value().bool_value
         self.window_overlap_ratio = self.get_parameter('window_overlap_ratio').get_parameter_value().double_value
         
+        # 内录功能参数
+        self.enable_recording = self.get_parameter('enable_recording').get_parameter_value().bool_value
+        self.recording_save_path = self.get_parameter('recording_save_path').get_parameter_value().string_value
+        self.recording_fps = self.get_parameter('recording_fps').get_parameter_value().double_value
+
+        # 内录状态变量
+        self.run_session_path = ""
+        self.last_capture_time = 0.0
+
         self.get_logger().info(f'Loading model from: {model_path}')
         self.get_logger().info(f'ROI crop enabled: {self.enable_roi_crop}')
         self.get_logger().info(f'Multi-window detection: {self.enable_multi_window}')
@@ -49,6 +64,13 @@ class ButtonDetector(Node):
         self.get_logger().info(f'Resize enabled: {self.enable_resize}, scale: {self.resize_scale}')
         self.get_logger().info(f'Confidence threshold: {self.confidence_threshold}')
         
+        if self.enable_recording:
+            session_name = datetime.now().strftime('%Y%m%d_%H%M%S')
+            self.run_session_path = os.path.join(self.recording_save_path, session_name)
+            os.makedirs(self.run_session_path, exist_ok=True)
+            self.get_logger().info(f"Data recording is enabled. Saving to: {self.run_session_path}")
+            self.last_capture_time = self.get_clock().now().nanoseconds / 1e9
+
         # 初始化检测历史用于置信度稳定化
         self.detection_history = []
         self.max_history_length = 5  # 保持最近5帧的检测历史
@@ -56,7 +78,7 @@ class ButtonDetector(Node):
         # AGV状态相关
         self.agv_is_moving = False
         self.agv_stop_time = None
-        self.detection_delay_after_stop = 0.0  # AGV停止后等待2秒再开始识别
+        self.detection_delay_after_stop = 1.0  # AGV停止后等待2秒再开始识别
         
         self.model = YOLO(model_path)
         self.model.to(self.device)
@@ -109,6 +131,10 @@ class ButtonDetector(Node):
             self.get_logger().warn("Invalid AGV motion status message")
 
     def image_callback(self, msg):
+        # 内录功能
+        if self.enable_recording:
+            self.handle_recording(msg)
+
         # 检查AGV状态，如果正在移动则跳过识别
         if self.agv_is_moving:
             return
@@ -153,6 +179,22 @@ class ButtonDetector(Node):
         # 发布识别结果（文本）- 使用原始坐标
         result_str = self.format_all_results_original_coords(all_results)
         self.result_publisher.publish(String(data=result_str))
+
+    def handle_recording(self, msg):
+        """处理图像采集逻辑"""
+        current_time_ns = self.get_clock().now().nanoseconds
+        current_time_sec = current_time_ns / 1e9
+        
+        # 检查是否达到了采集帧率要求的时间间隔
+        if (current_time_sec - self.last_capture_time) >= (1.0 / self.recording_fps):
+            try:
+                img_to_save = self.ros_img_to_cv2(msg)
+                filename = os.path.join(self.run_session_path, f"frame_{current_time_ns}.png")
+                cv2.imwrite(filename, img_to_save)
+                self.last_capture_time = current_time_sec # 更新上次采集时间
+                self.get_logger().debug(f"Saved image to {filename}")
+            except Exception as e:
+                self.get_logger().error(f"Failed to save recording image: {e}")
 
     def draw_filtered_results(self, result, img):
         """绘制置信度高于阈值的检测结果"""
