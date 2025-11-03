@@ -92,6 +92,11 @@ def generate_launch_description():
         'realtime_button_target_planner_params.yaml'
     )
 
+    agv_target_controller_config = os.path.join(
+        '/home/nvidia/Workspace/elevator_manipulation/config',
+        'agv_target_controller_params.yaml'
+    )
+
     # 1. Start move_group node
     run_move_group_node = Node(
         package="moveit_ros_move_group",
@@ -227,11 +232,7 @@ def generate_launch_description():
         name='agv_target_controller',
         output='screen',
         parameters=[
-            PathJoinSubstitution([
-                get_package_share_directory('agv_controller'),
-                'config',
-                'agv_target_controller_params.yaml'
-            ]),
+            agv_target_controller_config,
             {
                 'robot_ip': LaunchConfiguration('robot_ip'),
                 'use_sim_time': LaunchConfiguration('use_sim_time'),

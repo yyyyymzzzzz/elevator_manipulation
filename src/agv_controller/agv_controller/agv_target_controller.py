@@ -8,7 +8,8 @@ import json
 import time
 import uuid
 from typing import Optional, Dict
-import math 
+import math
+from rcl_interfaces.msg import ParameterType, ParameterDescriptor
 
 
 class RobotAPI:
@@ -129,13 +130,15 @@ class AGVTargetController(Node):
                 ('robot_ip', '192.168.10.10'),
                 ('robot_port', 31001),
                 ('navigation_timeout', 60.0),  # 导航超时时间
-                ('move_speed', 0.2),         # 盲走线速度 (m/s)
+                ('move_speed', 0.5),         # 盲走线速度 (m/s)
                 ('turn_speed', 0.5),         # 盲走角速度 (rad/s)
                 ('send_rate_hz', 10),        # joy_control发送频率
                 # 新增：等待开门相关参数
-                ('door_open_threshold', 0.45), # 门开启距离阈值 (m)
+                ('door_open_threshold', 0.8), # 门开启距离阈值 (m)
                 ('near_obstacle_threshold', 0.1), # 近距离探测阈值 (m)
                 ('far_probe_distance', 0.3),      # 远距离探测点 (m)
+                # 新增：用于存储所有运动序列的参数
+                ('motion_sequences', rclpy.Parameter.Type.STRING_ARRAY)
             ]
         )
         # 获取参数
@@ -148,6 +151,9 @@ class AGVTargetController(Node):
         self.door_open_threshold = self.get_parameter('door_open_threshold').get_parameter_value().double_value
         self.near_obstacle_threshold = self.get_parameter('near_obstacle_threshold').get_parameter_value().double_value
         self.far_probe_distance = self.get_parameter('far_probe_distance').get_parameter_value().double_value
+        
+        # 加载并解析运动序列
+        self.motion_sequences = self.load_motion_sequences()
         
         # 初始化机器人API
         self.robot_api = RobotAPI(self.robot_ip, self.robot_port)
@@ -164,6 +170,33 @@ class AGVTargetController(Node):
         self.timer = self.create_timer(0.5, self.poll_status)
         self.get_logger().info("AGV目标控制器已启动（简化版：仅导航 + 统一状态发布）")
     
+    def load_motion_sequences(self):
+        """从ROS参数加载并解析运动序列"""
+        sequences_param_value = self.get_parameter('motion_sequences').get_parameter_value()
+        self.get_logger().info(f"加载运动序列参数: {sequences_param_value.string_array_value}")
+        
+        parsed_sequences = {}
+        # 从 ParameterValue 对象获取字符串数组
+        sequences_list = sequences_param_value.string_array_value
+        
+        if not sequences_list:
+            self.get_logger().warn("参数 'motion_sequences' 未定义或为空。")
+            return parsed_sequences
+            
+        for seq_json in sequences_list:
+            try:
+                seq_data = json.loads(seq_json)
+                # 假设每个JSON字符串包含一个键值对，键是序列名
+                if len(seq_data) == 1:
+                    name, actions = next(iter(seq_data.items()))
+                    parsed_sequences[name] = actions
+                    self.get_logger().info(f"成功加载运动序列: '{name}'")
+                else:
+                    self.get_logger().warn(f"运动序列格式错误 (应为单键JSON对象): {seq_json}")
+            except json.JSONDecodeError:
+                self.get_logger().error(f"解析运动序列JSON失败: {seq_json}")
+        return parsed_sequences
+
     def setup_ros_interfaces(self):
         """设置ROS2接口"""
         self.nav_target_sub = self.create_subscription(
@@ -399,34 +432,51 @@ class AGVTargetController(Node):
         self.execute_timed_move(duration, angular_v=turn_speed * direction)
 
     def execute_motion_sequence(self, sequence_name: str) -> bool:
-        """根据序列名称，执行一系列预设的盲走动作"""
+        """根据参数化的序列名称，执行一系列预设的动作"""
         self.state = 'navigating' # 执行期间，将状态设为导航中
         self.motion_status = 'moving'
         self.publish_state('navigating')
+
+        sequence = self.motion_sequences.get(sequence_name)
+        if not sequence:
+            self.get_logger().error(f"未找到名为 '{sequence_name}' 的运动序列。")
+            self.state = 'idle'
+            self.motion_status = 'stopped'
+            return False
+
+        self.get_logger().info(f"  [序列] 正在执行 '{sequence_name}'...")
         
         try:
-            if sequence_name == 'enter_elevator':
-                self.get_logger().info("  [序列] 正在执行 'enter_elevator'...")
-                self.move_blind(distance=1.0, speed=self.move_speed) # 前进1.0米
-                self.turn_blind(angle_rad=math.pi / 2, turn_speed=self.turn_speed) # 左转90度
-                self.move_blind(distance=0.8, speed=self.move_speed) # 前进0.8米
-                self.turn_blind(angle_rad=math.pi / 2, turn_speed=self.turn_speed) # 左转90度
-                self.get_logger().info("  [序列] 'enter_elevator' 完成")
-                return True
+            for i, action in enumerate(sequence):
+                action_type = action.get('type')
+                self.get_logger().info(f"    [动作 {i+1}/{len(sequence)}] 类型: {action_type}, 参数: {action}")
 
-            elif sequence_name == 'panel_to_door':
-                self.get_logger().info("  [序列] 正在执行 'panel_to_door'...")
-                self.turn_blind(angle_rad=math.pi / 2, turn_speed=self.turn_speed) # 左转90度
-                self.move_blind(distance=0.8, speed=self.move_speed) # 前进0.8米
-                self.turn_blind(angle_rad=-math.pi / 2, turn_speed=self.turn_speed) # 右转90度
-                self.get_logger().info("  [序列] 'panel_to_door' 完成")
-                return True
+                if action_type == 'move':
+                    distance = float(action.get('distance', 0.0))
+                    speed = float(action.get('speed', self.move_speed))
+                    self.move_blind(distance=distance, speed=speed)
+                
+                elif action_type == 'turn':
+                    angle_deg = float(action.get('angle_deg', 0.0))
+                    turn_speed = float(action.get('turn_speed', self.turn_speed))
+                    self.turn_blind(angle_rad=math.radians(angle_deg), turn_speed=turn_speed)
+
+                elif action_type == 'sleep':
+                    duration = float(action.get('duration', 0.0))
+                    if duration > 0:
+                        self.get_logger().info(f"  [动作] 等待 {duration:.2f} 秒...")
+                        time.sleep(duration)
+                
+                else:
+                    self.get_logger().warn(f"未知的动作类型: '{action_type}'，已跳过。")
             
-            else:
-                self.get_logger().error(f"未知的运动序列名称: {sequence_name}")
-                return False
+            self.get_logger().info(f"  [序列] '{sequence_name}' 完成")
+            return True
+
         except Exception as e:
-            self.get_logger().error(f"执行运动序列时发生异常: {e}")
+            self.get_logger().error(f"执行运动序列 '{sequence_name}' 时发生异常: {e}")
+            # 确保在异常时也发送停止指令
+            self.robot_api.send_command("/api/joy_control?linear_velocity=0.0&angular_velocity=0.0", silent=True)
             return False
         finally:
             # 序列结束后，无论成功与否，都重置状态

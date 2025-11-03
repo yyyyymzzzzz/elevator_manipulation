@@ -22,3 +22,18 @@ agv_target_controller:
     
     # 循环控制
     enable_continuous_loop: true      # 是否启用连续循环模式
+
+    motion_sequences: [
+      '{"enter_elevator": [
+          {"type": "move", "distance": 1.5},
+          {"type": "turn", "angle_deg": 90.0},
+          {"type": "move", "distance": 0.5}
+        ]}',
+      '{"panel_to_door": [
+          {"type": "move", "distance": -0.5},
+          {"type": "turn", "angle_deg": 90.0}
+        ]}',
+      '{"exit_and_update_pose": [
+          {"type": "move", "distance": 1.5, "speed": 0.4}
+        ]}'
+    ]
