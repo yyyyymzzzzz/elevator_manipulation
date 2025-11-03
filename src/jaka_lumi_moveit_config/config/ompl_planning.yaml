@@ -24,14 +24,31 @@ ompl:
 
   # Planner configurations for the 'jaka_arm' group
   jaka_arm:
+    # 1. 这是你要启用的规划器列表
     planner_configs:
+      - RRTConnect
       - RRTstar
-    # Use all joints for projection to improve planning success rate
+      # 你可以添加更多, 比如 PRM, PRMstar 等
+
+    # --- 2. 这是每个规划器的详细定义 ---
+    # 你之前的配置中缺少了这些定义块
+
+    # RRTConnect 的定义 (快速, 适合默认使用)
+    RRTConnect:
+      type: geometric::RRTConnect
+      range: 0.0  # 0.0 表示自动设置
+      
+    # RRTstar 的定义 (较慢, 但路径更优)
+    RRTstar:
+      type: geometric::RRTstar
+      range: 0.0  # 0.0 表示自动设置
+      goal_bias: 0.05
+      delay_collision_checking: true
+
+    # --- 3. 这是你已有的其他全局设置 ---
     projection_evaluator: joints(l_a1,l_a2,l_a3,l_a4,l_a5,l_a6)
-    # Force planning in joint space to avoid IK failures
     enforce_joint_model_state_space: true
-    longest_valid_segment_fraction: 0.002 # Smaller segments for better collision checking
-    # Additional parameters for speed control
-    planning_time_limit: 20.0  # Increased for better success rate
-    max_velocity_scaling_factor: 0.02  # Slightly increased for better motion
-    max_acceleration_scaling_factor: 0.02  # Slightly increased for better motion
+    longest_valid_segment_fraction: 0.002 
+    planning_time_limit: 20.0  
+    max_velocity_scaling_factor: 0.02  
+    max_acceleration_scaling_factor: 0.02

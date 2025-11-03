@@ -106,10 +106,10 @@ class ButtonFollower(Node):
         self.position_check_start_time = None
         
         # 位置检查的最小等待时间（确保机器人真正稳定）
-        self.min_settle_time = 3.0  # 至少等待3秒再开始检查，确保轨迹执行完成
+        self.min_settle_time = 1.0  # 至少等待1秒再开始检查，确保轨迹执行完成
         
         # 按压相关参数
-        self.press_distance = 0.06  # 按压距离：6cm
+        self.press_distance = 0.042  # 按压距离：5cm (从7cm下调)
 
         # 定义Home位置的关节角度 
         self.home_joint_angles = [-1.0*math.pi/2.0, math.pi/2.0, math.pi/2.0, 0.0, 0.0, 0.0]
@@ -400,7 +400,7 @@ class ButtonFollower(Node):
         request = GetMotionPlan.Request()
         motion_plan_request = MotionPlanRequest()
         motion_plan_request.group_name = "jaka_arm"
-        motion_plan_request.planner_id = "RRTstar"
+        motion_plan_request.planner_id = "RRTConnect"
         motion_plan_request.allowed_planning_time = 10.0
         
         motion_plan_request.start_state = start_state
@@ -411,7 +411,7 @@ class ButtonFollower(Node):
         position_constraint.link_name = "link_a6"
         bounding_box = SolidPrimitive()
         bounding_box.type = SolidPrimitive.BOX
-        bounding_box.dimensions = [0.02, 0.02, 0.02] 
+        bounding_box.dimensions = [0.005, 0.005, 0.005] 
         position_constraint.constraint_region.primitives.append(bounding_box)
         position_constraint.constraint_region.primitive_poses.append(goal_pose.pose)
         position_constraint.weight = 1.0
@@ -421,9 +421,9 @@ class ButtonFollower(Node):
         orientation_constraint.header.frame_id = goal_pose.header.frame_id
         orientation_constraint.link_name = "link_a6"
         orientation_constraint.orientation = goal_pose.pose.orientation
-        orientation_constraint.absolute_x_axis_tolerance = 0.05 
-        orientation_constraint.absolute_y_axis_tolerance = 0.05 
-        orientation_constraint.absolute_z_axis_tolerance = 3.14
+        orientation_constraint.absolute_x_axis_tolerance = 0.1 
+        orientation_constraint.absolute_y_axis_tolerance = 0.1 
+        orientation_constraint.absolute_z_axis_tolerance = 6.28
         orientation_constraint.weight = 2.0
         constraints.orientation_constraints.append(orientation_constraint)
         
@@ -473,7 +473,7 @@ class ButtonFollower(Node):
         request = GetMotionPlan.Request()
         motion_plan_request = MotionPlanRequest()
         motion_plan_request.group_name = "jaka_arm"
-        motion_plan_request.planner_id = "RRTConnectkConfigDefault"  
+        motion_plan_request.planner_id = "RRTConnect"  
         motion_plan_request.allowed_planning_time = 15.0
         motion_plan_request.start_state = start_state
 
@@ -483,10 +483,10 @@ class ButtonFollower(Node):
         position_constraint.link_name = "link_a6"
         bounding_box = SolidPrimitive()
         bounding_box.type = SolidPrimitive.BOX
-        bounding_box.dimensions = [0.01, 0.01, 0.005]  
+        bounding_box.dimensions = [0.001, 0.01, 0.001] 
         position_constraint.constraint_region.primitives.append(bounding_box)
         position_constraint.constraint_region.primitive_poses.append(self.current_press_pose.pose)
-        position_constraint.weight = 1.0
+        position_constraint.weight = 2.0
         constraints.position_constraints.append(position_constraint)
 
         orientation_constraint = OrientationConstraint()
@@ -532,7 +532,7 @@ class ButtonFollower(Node):
         request = GetMotionPlan.Request()
         motion_plan_request = MotionPlanRequest()
         motion_plan_request.group_name = "jaka_arm"
-        motion_plan_request.planner_id = "RRTConnectkConfigDefault"
+        motion_plan_request.planner_id = "RRTConnect"
         motion_plan_request.allowed_planning_time = 10.0
 
         start_state = RobotState()
@@ -596,7 +596,7 @@ class ButtonFollower(Node):
         request = GetMotionPlan.Request()
         motion_plan_request = MotionPlanRequest()
         motion_plan_request.group_name = "jaka_arm"
-        motion_plan_request.planner_id = "RRTConnectkConfigDefault"
+        motion_plan_request.planner_id = "RRTConnect"
         motion_plan_request.allowed_planning_time = 10.0
 
         start_state = RobotState()

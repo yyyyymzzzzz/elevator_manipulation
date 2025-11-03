@@ -195,7 +195,7 @@ class Button3DVisualizer(Node):
         detections = self.parse_detection_result(detection_text)
         self.current_detections = detections  # 保存当前检测结果
         
-        self.get_logger().info(f'检测到 {len(detections)} 个按钮')
+        # self.get_logger().info(f'检测到 {len(detections)} 个按钮')
 
         # 生成3D标记
         markers = self.create_3d_markers(detections)
@@ -206,7 +206,7 @@ class Button3DVisualizer(Node):
         self.last_marker_array = marker_array  # 保存标记数组用于重新发布
         self.marker_publisher.publish(marker_array)
         
-        self.get_logger().info(f'发布了 {len(markers)} 个3D按钮标记')
+        # self.get_logger().info(f'发布了 {len(markers)} 个3D按钮标记')
 
     def parse_detection_result(self, detection_text):
         """解析检测结果文本"""

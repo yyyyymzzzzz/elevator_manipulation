@@ -55,27 +55,47 @@ def generate_launch_description():
         )
         .to_moveit_configs()
     )    
+
     # 自定义 OMPL 配置作为参数字典
     ompl_planning_yaml_params = {
         "planning_pipelines": ["ompl"],
         "default_planning_pipeline": "ompl",
+        
+        # 'ompl' 是顶层键
         "ompl": {
             "planning_plugin": "ompl_interface/OMPLPlanner",
+            
+            # 1. 声明要使用的适配器 (这部分你之前是正确的)
             "request_adapters": "default_planning_request_adapters/AddTimeOptimalParameterization default_planning_request_adapters/FixWorkspaceBounds default_planning_request_adapters/FixStartStateBounds default_planning_request_adapters/FixStartStateCollision default_planning_request_adapters/FixStartStatePathConstraints",
-            "default_planning_request_adapters": {
-                "AddTimeOptimalParameterization": {
-                    "type": "planning_request_adapter/AddTimeOptimalParameterization",
-                    "path_tolerance": 0.1,
-                    "resample_dt": 0.5,
-                }
+            
+            # 'jaka_arm' 组的配置
+            "jaka_arm": {
+                "planner_configs": ["RRTConnect", "RRTstar"],
+                "RRTConnect": {
+                    "type": "geometric::RRTConnect",
+                    "range": 0.0,
+                },
+                "RRTstar": {
+                    "type": "geometric::RRTstar",
+                    "range": 0.0,
+                    "goal_bias": 0.05,
+                },
+                "projection_evaluator": "joints(l_a1,l_a2,l_a3,l_a4,l_a5,l_a6)", 
+                "longest_valid_segment_fraction": 0.01, 
             },
         },
-        "jaka_arm": {
-            "planner_configs": ["RRTConnect"],
-            "projection_evaluator": "joints(l_a1,l_a2)",
-            "longest_valid_segment_fraction": 1.0,
+        
+        # 2. 修正: 将适配器的 *定义* 移动到顶层，作为 "ompl" 的兄弟键
+        "default_planning_request_adapters": {
+            "AddTimeOptimalParameterization": {
+                "type": "planning_request_adapter/AddTimeOptimalParameterization",
+                "path_tolerance": 0.1,    # 路径重新采样的容忍度
+                "resample_dt": 0.1,         # 建议：将 0.5 改为 0.1 以获得更平滑的轨迹
+            }
+            # ... 这里可以添加 FixWorkspaceBounds 等的定义, 但通常它们不需要额外参数
         },
     }
+
 
     button_detector_config = os.path.join(
         '/home/nvidia/Workspace/elevator_manipulation/config',
@@ -110,7 +130,7 @@ def generate_launch_description():
             {"fake_execution": False},
             {'use_sim_time': use_sim_time},
             {"trajectory_execution.allowed_start_tolerance": 0.1},
-            {"trajectory_execution.allowed_goal_tolerance": 0.1},
+            {"trajectory_execution.allowed_goal_tolerance": 0.05},
             {"trajectory_execution.allowed_execution_duration_scaling": 25.0},  # 增加执行时间容忍度
             {"trajectory_execution.execution_duration_monitoring": True},
         ],
@@ -188,7 +208,7 @@ def generate_launch_description():
         package='tf2_ros',
         executable='static_transform_publisher',
         name='static_camera_tf_publisher',
-        arguments=['0.06', '-0.01', '0', '0', '1.5708', '1.5708', 'Camera3_Link', 'camera_link'],
+        arguments=['0.08', '0.005', '0', '0', '1.5708', '1.5708', 'Camera3_Link', 'camera_link'],
     )
 
     # 按钮检测节点

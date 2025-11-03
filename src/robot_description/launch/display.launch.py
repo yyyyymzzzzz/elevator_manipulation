@@ -36,19 +36,21 @@ def generate_launch_description():
         package='robot_state_publisher',
         executable='robot_state_publisher',
         name='robot_state_publisher',
-        parameters=[{
-            'robot_description': ParameterValue(
+        parameters=[
+            {'robot_description': ParameterValue(
                 Command(['cat ', LaunchConfiguration('model')]),
                 value_type=str
-            )
-        }]
+            )},
+            {'use_sim_time': LaunchConfiguration('use_sim_time')}
+        ]
     )
     
     # Joint State Publisher GUI
     joint_state_publisher_gui_node = Node(
         package='joint_state_publisher_gui',
         executable='joint_state_publisher_gui',
-        name='joint_state_publisher_gui'
+        name='joint_state_publisher_gui',
+        parameters=[{'source_list': ['/fake_joint_states']}]
     )
     
     # RViz
@@ -59,10 +61,18 @@ def generate_launch_description():
         arguments=['-d', LaunchConfiguration('rvizconfig')]
     )
     
-    return LaunchDescription([
+    ld = LaunchDescription([
         model_arg,
         rviz_arg,
         robot_state_publisher_node,
-        # joint_state_publisher_gui_node,
         rviz_node
     ])
+    
+    # 移除旧的、未配置的 joint_state_publisher_gui 启动方式
+    # ld.add_action(joint_state_publisher_gui_node)
+    
+    # 仅在 use_joint_state_publisher_gui 为 True 时，才添加我们上面配置好的节点
+    if LaunchConfiguration('use_joint_state_publisher_gui'):
+        ld.add_action(joint_state_publisher_gui_node)
+
+    return ld

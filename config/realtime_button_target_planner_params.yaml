@@ -3,7 +3,7 @@
 realtime_button_target_planner:
   ros__parameters:
     # 目标位置计算参数
-    target_distance: 0.15          # 目标位置距按钮的距离 (m)
+    target_distance: 0.14          # 目标位置距按钮的距离 (m)
     use_fixed_normal: true         # 是否使用固定法向量（避免复杂的点云计算）
     fixed_normal_x: 0.0            # 固定法向量 X 分量（垂直墙面向外）
     fixed_normal_y: 1.0            # 固定法向量 Y 分量  
