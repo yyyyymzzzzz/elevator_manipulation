@@ -1,6 +1,6 @@
 button_detector:
   ros__parameters:
-    model_path: "/home/ymz/Workspace/elevator_manipulation/model/result/AdamW/weights/best.pt"
+    model_path: "/home/nvidia/Workspace/elevator_manipulation/model/result2/best.pt"
     
     # ROI裁剪参数 
     enable_roi_crop: true

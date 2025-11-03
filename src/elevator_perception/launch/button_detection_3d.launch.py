@@ -7,12 +7,12 @@ import os
 def generate_launch_description():
     # 获取参数文件路径
     button_detector_config = os.path.join(
-        '/home/ymz/Workspace/elevator_manipulation/config',
+        '/home/nvidia/Workspace/elevator_manipulation/config',
         'button_detector_params.yaml'
     )
     
     button_3d_config = os.path.join(
-        '/home/ymz/Workspace/elevator_manipulation/config',
+        '/home/nvidia/Workspace/elevator_manipulation/config',
         'button_3d_visualizer_params.yaml'
     )
     
