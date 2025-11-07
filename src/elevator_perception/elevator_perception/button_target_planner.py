@@ -391,7 +391,6 @@ class ButtonTargetPlanner(Node):
                 use_default_normal = True
         
         # 确保法向量指向相机方向（向我们）
-        # 在相机坐标系中，相机位置是原点，z轴指向前方
         # 如果法向量指向相机，那么从按钮位置到相机的向量与法向量的点积应该为正
         
         if not use_default_normal:
@@ -412,8 +411,7 @@ class ButtonTargetPlanner(Node):
         
         self.get_logger().info(f'最终法向量: ({plane_normal[0]:.3f}, {plane_normal[1]:.3f}, {plane_normal[2]:.3f})')
         
-        # 计算目标位置（在按钮位置基础上，沿法向量向外移动目标距离）
-        # 注意：这里我们要沿着法向量的反方向移动，因为我们希望位置在按钮外侧
+        # 计算目标位置
         target_position_in_cloud_frame = button_position_in_cloud_frame + plane_normal * self.target_distance
         
         # 如果需要，将目标位置转换回原始坐标系
@@ -754,10 +752,8 @@ class ButtonTargetPlanner(Node):
         """创建坐标轴标记"""
         markers = []
         
-        # 将四元数转换为旋转矩阵（手动实现）
+        # 将四元数转换为旋转矩阵
         qx, qy, qz, qw = orientation
-        
-        # 四元数到旋转矩阵的转换
         rotation_matrix = np.array([
             [1 - 2*(qy**2 + qz**2), 2*(qx*qy - qz*qw), 2*(qx*qz + qy*qw)],
             [2*(qx*qy + qz*qw), 1 - 2*(qx**2 + qz**2), 2*(qy*qz - qx*qw)],
@@ -789,7 +785,7 @@ class ButtonTargetPlanner(Node):
             start_point.z = float(position[2])
             marker.points.append(start_point)
             
-            # 终点（沿各个轴方向）
+            # 终点
             axis_direction = rotation_matrix[:, i]
             end_pos = position + axis_direction * axis_length
             end_point = Point()
@@ -832,7 +828,6 @@ class ButtonTargetPlanner(Node):
         
         self.target_pose_publisher.publish(pose_stamped)
         # 降低日志级别，避免过多输出
-        # self.get_logger().debug('发布目标姿态')
 
 
 def main(args=None):

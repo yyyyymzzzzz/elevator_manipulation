@@ -8,6 +8,7 @@ from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray
 from rcl_interfaces.msg import ParameterDescriptor
+from rcl_interfaces.msg import SetParametersResult
 import threading
 import time
 import math
@@ -80,7 +81,7 @@ class TrajectoryController(Node):
         # 参数变化回调
         self.add_on_set_parameters_callback(self.parameter_callback)
         
-        # 定时发布关节状态 - 注释掉以避免与arm_controller冲突
+        # 定时发布关节状态 - 注释避免与arm_controller冲突
         # self.joint_state_timer = self.create_timer(0.1, self.publish_joint_states)
         
         self.get_logger().info('JAKA轨迹控制器已启动')
@@ -110,8 +111,7 @@ class TrajectoryController(Node):
             elif param.name == 'max_trajectory_points':
                 self.max_trajectory_points = param.value
                 self.get_logger().info(f'更新最大轨迹点数: {self.max_trajectory_points}')
-        
-        from rcl_interfaces.msg import SetParametersResult
+
         return SetParametersResult(successful=True)
                         
     def calculate_joint_distance(self, positions1, positions2):
@@ -263,19 +263,6 @@ class TrajectoryController(Node):
                 if not goal_handle.is_active:
                     self.get_logger().info('轨迹执行被取消')
                     break
-                
-                # # 计算当前点的预期执行时间
-                # if i == 0:
-                #     target_time = 0.0
-                # else:
-                #     target_time = i * time_per_point
-                
-                # # 等待到达目标时间
-                # elapsed_time = time.time() - start_time
-                # if elapsed_time < target_time:
-                #     sleep_time = target_time - elapsed_time
-                #     if sleep_time > 0:
-                #         time.sleep(sleep_time)
                 
                 # 重新排列关节位置以匹配我们的关节顺序
                 joint_positions = [0.0] * 6

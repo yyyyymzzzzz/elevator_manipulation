@@ -37,16 +37,11 @@ class TaskAssignment(Node):
         self.waiting_for_door = False
         self.is_moving = False
 
-        # 新增：用于管理多步任务的状态
+        # 用于管理多步任务的状态
         self.button_press_step = 'idle'  # 'idle', 'lowering_head', 'pressing_button', 'resetting_head'
         
-        # 设置ROS接口
         self.setup_ros_interfaces()
-        
-        # 加载任务配置
         self.load_tasks()
-        
-        # 主循环定时器 - 每秒检查一次状态
         self.main_timer = self.create_timer(1.0, self.main_loop)
         
         self.get_logger().info(f"任务分配器已启动，共加载 {len(self.task_list)} 个任务")

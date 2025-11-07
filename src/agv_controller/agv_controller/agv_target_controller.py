@@ -119,7 +119,6 @@ class RobotAPI:
 
         return -1, "中心点测距失败"
 
-
 class AGVTargetController(Node):
     def __init__(self):
         super().__init__('agv_target_controller')

@@ -3,7 +3,6 @@ jaka_arm_controller:
   ros__parameters:
     # 关节空间中跳过中间点的最小距离阈值（弧度）
     # 0.3弧度 ≈ 17度，更大的阈值来确保优化效果
-    # 推荐范围: 0.1 - 0.5
     min_joint_distance: 0.5
     
     # 是否启用路径优化
@@ -13,10 +12,8 @@ jaka_arm_controller:
     
     # 轨迹点之间的执行延迟（秒）
     # 防止命令积压，让arm_controller有时间处理每个命令
-    # 推荐范围: 0.1 - 0.5
     point_execution_delay: 0.0
     
     # 优化后最大保留的轨迹点数量
-    # 如果原始轨迹点数超过此值，将使用等间隔采样
-    # 推荐范围: 3 - 8 (减少更多中间点)
+    # 目前只保留为最终目标点
     max_trajectory_points: 1

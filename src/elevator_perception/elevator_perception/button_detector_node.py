@@ -19,16 +19,16 @@ class ButtonDetector(Node):
             namespace='',
             parameters=[
                 ('model_path', '/home/nvidia/Workspace/elevator_manipulation/model/result/AdamW/weights/best.pt'),
-                ('enable_roi_crop', True),  # 启用ROI裁剪，但用于多窗口检测
-                ('roi_x_ratio', 0.2), 
-                ('roi_y_ratio', 0.1), 
-                ('roi_width_ratio', 0.6),  
-                ('roi_height_ratio', 0.8), 
-                ('enable_resize', True),
-                ('resize_scale', 2.0), 
+                ('enable_roi_crop', True),  # 启用ROI裁剪，用于多窗口检测，但目前已弃用
+                ('roi_x_ratio', 0.2), # 已弃用
+                ('roi_y_ratio', 0.1), # 已弃用
+                ('roi_width_ratio', 0.6),  # 已弃用
+                ('roi_height_ratio', 0.8), # 已弃用
+                ('enable_resize', True), # 已弃用
+                ('resize_scale', 2.0), # 已弃用
                 ('confidence_threshold', 0.5),
-                ('enable_multi_window', True),  # 启用多窗口检测
-                ('window_overlap_ratio', 0.5),  # 增加窗口重叠比例，确保边缘覆盖
+                ('enable_multi_window', False),  # 启用多窗口检测，已弃用
+                ('window_overlap_ratio', 0.5),  # 增加窗口重叠比例，确保边缘覆盖，已启用
                 ('enable_recording', False), # 控制是否启用内录功能
                 ('recording_save_path', '/home/nvidia/Workspace/elevator_manipulation/data/dataset'), # 内录图像保存路径
                 ('recording_fps', 5.0) # 内录采集帧率
@@ -80,7 +80,7 @@ class ButtonDetector(Node):
         # AGV状态相关
         self.agv_is_moving = False
         self.agv_stop_time = None
-        self.detection_delay_after_stop = 1.0  # AGV停止后等待2秒再开始识别
+        self.detection_delay_after_stop = 1.0  # AGV停止后等待1秒再开始识别
         
         self.model = YOLO(model_path)
         self.model.to(self.device)
@@ -110,7 +110,7 @@ class ButtonDetector(Node):
         self.bridge = CvBridge()
 
     def robot_status_callback(self, msg):
-        """接收机器人状态并清理历史数据"""
+        """接收机器人状态并清理历史数据，防止运动过程中的观测数据造成干扰"""
         try:
             data = json.loads(msg.data)
             is_moving = data.get('is_moving', False)
@@ -154,7 +154,7 @@ class ButtonDetector(Node):
             if time_since_stop < self.detection_delay_after_stop:
                 return  # 还未到识别时间
             else:
-                # 首次恢复识别时的日志
+                # 首次恢复识别
                 if hasattr(self, '_first_detection_after_stop') and self._first_detection_after_stop:
                     self.get_logger().info("恢复按钮识别")
                     self._first_detection_after_stop = False
@@ -167,15 +167,11 @@ class ButtonDetector(Node):
             self.get_logger().warn("图像转换失败，跳过当前帧")
             return
         
-        # --- 核心修改：直接对完整图像进行推理 ---
-        # YOLOv8模型会自动处理缩放、填充和归一化，与训练时保持一致
+        # 修改后：对完整图片进行推理
         results = self.model(img, verbose=False)
-        
-        # 从返回的列表中获取第一个结果对象
         yolo_result = results[0]
 
-        # --- 简化结果绘制和发布 ---
-        # 使用YOLOv8内置的plot()功能在原始图像上绘制所有结果
+        # 修改后：直接绘制结果
         original_annotated = yolo_result.plot()
         
         # 发布标注后的图像
@@ -212,33 +208,30 @@ class ButtonDetector(Node):
         if result.boxes is not None:
             for box in result.boxes:
                 conf = float(box.conf[0])
-                
-                # 使用可配置的置信度阈值
+            
                 if conf <= self.confidence_threshold:
                     continue
                 
-                # 获取类别名称
                 cls_id = int(box.cls[0])
                 class_name = result.names[cls_id]
                 
-                # 获取边界框坐标 (V2使用浮点数)
-                # 注意：我们直接从YOLO结果中获取，V1的推理逻辑未变
+                # 获取边界框坐标 
                 xyxy = box.xyxy[0].cpu().numpy()
                 x1, y1, x2, y2 = xyxy[0], xyxy[1], xyxy[2], xyxy[3]
                 
-                # 计算中心点坐标 (V2格式)
+                # 计算中心点坐标
                 center_x = (x1 + x2) / 2
                 center_y = (y1 + y2) / 2
                 
-                # 计算宽度和高度 (V2格式)
+                # 计算宽度和高度
                 width = x2 - x1
                 height = y2 - y1
                 
-                # 格式化输出 (V2格式)
+                # 格式化输出
                 result_line = f'{class_name}: {conf:.2f}, bbox:[{x1:.1f},{y1:.1f},{x2:.1f},{y2:.1f}], center:[{center_x:.1f},{center_y:.1f}], size:[{width:.1f}x{height:.1f}]'
                 out.append(result_line)
         
-        # 返回V2的多行纯文本格式，如果列表为空则返回 'No detections'
+        # 返回多行纯文本格式，如果列表为空则返回 'No detections'
         return '\n'.join(out) if out else 'No detections'
 
     def ros_img_to_cv2(self, ros_img):

@@ -5,9 +5,9 @@ realtime_button_target_planner:
     # 目标位置计算参数
     target_distance: 0.14          # 目标位置距按钮的距离 (m)
     use_fixed_normal: true         # 是否使用固定法向量（避免复杂的点云计算）
-    fixed_normal_x: 0.0            # 固定法向量 X 分量（垂直墙面向外）
+    fixed_normal_x: 0.0            # 固定法向量 X 分量
     fixed_normal_y: 1.0            # 固定法向量 Y 分量  
-    fixed_normal_z: 0.0           # 固定法向量 Z 分量（负值表示向相机方向，即墙面向外）
+    fixed_normal_z: 0.0           # 固定法向量 Z 分量
     
     # 坐标系配置
     target_frame: "world"
@@ -30,6 +30,6 @@ realtime_button_target_planner:
     button_selection_method: "sequential"
     sequential_duration: 20.0      # 顺序模式下每个按钮的持续时间 (s)
     
-    # 目标清理参数 - 解决按钮长时间未检测到时目标残留的问题
+    # 目标清理参数
     target_cleanup_interval: 2.0   # 清理检查间隔 (s)
-    target_expiry_time: 5.0        # 目标过期时间 (s) - 按钮未检测到超过此时间将被清理
+    target_expiry_time: 5.0        # 目标过期时间 (s) 

@@ -299,8 +299,6 @@ class Button3DVisualizer(Node):
         depth_m = np.median(depth_values)
         
         # 使用彩色相机的内参将像素坐标转换为3D坐标
-        # 注意：我们使用彩色图像的像素坐标，但是深度值来自深度图像
-        # 这里假设彩色和深度图像已经对齐（大多数现代RGB-D相机都支持）
         fx = self.camera_info.k[0]  # 焦距 x
         fy = self.camera_info.k[4]  # 焦距 y  
         cx = self.camera_info.k[2]  # 主点 x

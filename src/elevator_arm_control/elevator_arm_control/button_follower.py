@@ -629,7 +629,6 @@ class ButtonFollower(Node):
         future.add_done_callback(self.planning_done_callback)
 
     def planning_done_callback(self, future):
-        # _MODIFIED_ This is the core logic change
         try:
             response = future.result()
             motion_plan_response = response.motion_plan_response

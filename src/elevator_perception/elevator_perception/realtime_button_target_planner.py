@@ -122,7 +122,7 @@ class RealtimeButtonTargetPlanner(Node):
             10
         )
         
-        # 发布当前选中按钮的位置信息（给AGV控制器使用）
+        # 发布当前选中按钮的位置信息（调试使用）
         self.current_button_info_publisher = self.create_publisher(
             String,
             '/current_button_info',
@@ -451,25 +451,24 @@ class RealtimeButtonTargetPlanner(Node):
     def calculate_targets_fast(self):
         """快速计算目标位置（避免复杂的点云处理）"""
         for class_name, button_data in self.current_button_positions.items():
-            # 使用简化的目标位置计算
             button_position = button_data['position']
             frame_id = button_data['frame_id']
             
-            # 使用固定法向量或简单估计
+            # 使用固定法向量
             if self.use_fixed_normal:
                 # 将固定法向量转换到按钮坐标系
                 normal = self.transform_normal_to_frame(self.fixed_normal, frame_id)
             else:
-                # 使用简单的默认法向量（假设按钮面向Z轴负方向）
+                # 使用简单的默认法向量
                 normal = np.array([0.0, 0.0, -1.0])
             
             # 确保法向量归一化
             normal = normal / np.linalg.norm(normal)
             
-            # 计算目标位置（沿法向量方向外移）
+            # 计算目标位置，沿法向量方向外移
             target_position = button_position + normal * self.target_distance
             
-            # 计算目标姿态（参照原始代码逻辑：z轴从目标指向按钮）
+            # 计算目标姿态
             target_orientation = self.calculate_simple_orientation(normal, target_position, button_position)
             
             # 存储目标位置
@@ -495,8 +494,6 @@ class RealtimeButtonTargetPlanner(Node):
             
             # 提取旋转部分并应用到法向量
             q = transform.transform.rotation
-            # 简化处理：这里可以添加四元数旋转计算
-            # 暂时返回原始法向量
             return normal
             
         except Exception as e:
@@ -536,7 +533,7 @@ class RealtimeButtonTargetPlanner(Node):
         else:
             x_axis = x_direction / x_axis_norm
         
-        # y轴：由右手法则确定 (z × x = y)
+        # y轴
         y_axis = np.cross(z_axis, x_axis)
         y_axis = y_axis / np.linalg.norm(y_axis)
         
@@ -680,7 +677,7 @@ class RealtimeButtonTargetPlanner(Node):
         self.missing_button_start_time = time.time()
     
     def switch_to_agv_target_button(self, target_button: str):
-        """切换到AGV指定的目标按钮"""
+        """切换到任务规划指定的目标按钮"""
         # 检查目标按钮是否在历史按钮列表中
         if target_button in self.historical_button_classes:
             # 直接切换到指定的按钮
