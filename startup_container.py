@@ -81,7 +81,7 @@ def generate_launch_description():
                     "goal_bias": 0.05,
                 },
                 "projection_evaluator": "joints(l_a1,l_a2,l_a3,l_a4,l_a5,l_a6)", 
-                "longest_valid_segment_fraction": 0.01, 
+                "longest_valid_segment_fraction": 0.9, 
             },
         },
         
@@ -89,8 +89,8 @@ def generate_launch_description():
         "default_planning_request_adapters": {
             "AddTimeOptimalParameterization": {
                 "type": "planning_request_adapter/AddTimeOptimalParameterization",
-                "path_tolerance": 0.1,    # 路径重新采样的容忍度
-                "resample_dt": 0.1,         # 建议：将 0.5 改为 0.1 以获得更平滑的轨迹
+                "path_tolerance": 0.5,    # 路径重新采样的容忍度
+                "resample_dt": 10.0,         # 增大采样时间间隔以减少轨迹点
             }
             # ... 这里可以添加 FixWorkspaceBounds 等的定义, 但通常它们不需要额外参数
         },
