@@ -4,7 +4,7 @@ tasks:
         - step_id: "导航到1楼的A点"
           task_type: "navigation"
           location: "A_Point_F1"   
-        # --- 阶段 1: 在1楼呼叫电梯 ---
+        # # --- 阶段 1: 在1楼呼叫电梯 ---
         - step_id: "导航到1楼电梯面板前"
           task_type: "navigation"
           location: "F1_Panel"  
@@ -28,9 +28,14 @@ tasks:
       # --- 阶段 3: 在电梯内选择楼层 ---
         - step_id: "按压楼层'2'"
           task_type: "button_press"
-          button: "button_2"        
+          button: "button_2"
 
-      # --- 阶段 4: 等待并离开电梯 ---
+      # --- 阶段 4: 观察面板并识别2楼 ---
+        - step_id: "识别2楼'"
+          task_type: "look_at_panel"
+          floor: "2"        
+
+      # --- 阶段 5: 等待并离开电梯 ---
         - step_id: "从内部面板转向电梯门"
           task_type: "motion_sequence"
           sequence: "panel_to_door"  
@@ -44,7 +49,7 @@ tasks:
           floor: "2"                       # 目标楼层
           location: "F2_Door_Outside"      
 
-#       # --- 阶段 5: 在2楼执行任务 ---
+#       # --- 阶段 6: 在2楼执行任务 ---
 #       - step_id: "导航到2楼的B点"
 #         task_type: "navigation"
 #         location: "B_Point_F2"  

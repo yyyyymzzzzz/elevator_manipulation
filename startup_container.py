@@ -228,6 +228,13 @@ def generate_launch_description():
         parameters=[button_3d_config],
         output='screen'
     )
+    # 面板检测节点
+    look_panel_node = Node(
+        package='elevator_perception',
+        executable='panel_perception',
+        name='panel_perception',
+        output='screen'
+    )
 
     # 实时按钮目标规划器节点
     realtime_planner_node = Node(
@@ -274,6 +281,7 @@ def generate_launch_description():
             static_tf_node,
             button_detector_node,
             button_3d_visualizer_node,
+            look_panel_node,
             realtime_planner_node,
             button_follower_node,
             agv_controller_node

@@ -27,6 +27,7 @@ setup(
             'button_3d_visualizer = elevator_perception.button_3d_visualizer:main',
             'button_target_planner = elevator_perception.button_target_planner:main',
             'realtime_button_target_planner = elevator_perception.realtime_button_target_planner:main',
+            'panel_perception = elevator_perception.panel_perception:main'
         ],
     },
 )

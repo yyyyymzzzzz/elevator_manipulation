@@ -36,6 +36,7 @@ class TaskAssignment(Node):
         self.waiting_for_button = False
         self.waiting_for_door = False
         self.is_moving = False
+        self.waiting_for_arrival=False
 
         # 用于管理多步任务的状态
         self.button_press_step = 'idle'  # 'idle', 'lowering_head', 'pressing_button', 'resetting_head'
@@ -75,7 +76,13 @@ class TaskAssignment(Node):
             '/decision/wait_for_door',
             10
         )
-        
+
+        # 发布器 - 发送观察面板指令
+        self.look_panel_publisher = self.create_publisher(
+            String,
+            '/decision/look_panel',
+            10
+        )
         # 发布器 - 发布任务状态
         self.task_status_publisher = self.create_publisher(
             String,
@@ -96,6 +103,13 @@ class TaskAssignment(Node):
             String,
             '/decision/body_head_completed',
             self.head_control_completion_callback,
+            10
+        )
+        # 订阅器 - 到达目标楼层信号
+        self.floor_arrival_subscriber = self.create_subscription(
+            String,
+            '/look_floor/completed',
+            self.floor_arrival_callback,
             10
         )
 
@@ -196,7 +210,7 @@ class TaskAssignment(Node):
 
         """主循环 - 检查状态并执行下一个任务"""
         # 如果正在等待导航或按钮完成，则不执行新任务
-        if self.waiting_for_navigation or self.waiting_for_button or self.waiting_for_door:
+        if self.waiting_for_navigation or self.waiting_for_button or self.waiting_for_door or self.waiting_for_arrival:
             return
         
         # 检查是否还有任务要执行
@@ -227,6 +241,8 @@ class TaskAssignment(Node):
             self.execute_wait_for_door_task(task)
         elif task_type == 'motion_sequence':
             self.execute_motion_sequence_task(task)
+        elif task_type == 'look_at_panel':
+            self.execute_look_panel_task(task)
         elif task_type == 'exit_and_update_pose':
             self.execute_exit_and_update_pose_task(task)
         else:
@@ -277,6 +293,18 @@ class TaskAssignment(Node):
         })
         self.head_control_publisher.publish(msg)
 
+    def _send_body_command(self,target_floor:float):
+        """发送身体高度控制指令的辅助函数"""
+        self.get_logger().info("身体开始运动，is_moving设置为True")
+        self.is_moving = True
+        msg = String()
+        msg.data = json.dumps({
+            'command': 'look_at_panel',
+            'target_floor': target_floor,
+            'timestamp': time.time()
+        })
+        self.head_control_publisher.publish(msg)
+
     def execute_wait_for_door_task(self, task: Dict):
         """执行等待开门任务"""
         self.get_logger().info("⏳ 等待电梯门开启...")
@@ -313,6 +341,27 @@ class TaskAssignment(Node):
         
         # 复用导航等待标志，因为完成信号将通过 /agv/status topic 发来
         self.waiting_for_navigation = True
+    def execute_look_panel_task(self, task: Dict):
+        """执行观察是否到达目标楼层任务"""
+        target_floor = task.get('floor')
+
+        # self._send_body_command(target_floor) 
+        
+        if not target_floor:
+            self.get_logger().error("观察面板任务缺少目标楼层")
+            self.move_to_next_task()
+            return
+        
+        self.get_logger().info(f"⏳ 观察面板中，目标楼层: {target_floor}")
+        
+        msg = String()
+        self.waiting_for_arrival = True
+        msg.data = json.dumps({
+            'command': 'identify_floor',
+            'target_floor': str(target_floor),
+            'timestamp': time.time()
+        })
+        self.look_panel_publisher.publish(msg)
 
     def execute_exit_and_update_pose_task(self, task: Dict):
         """执行驶出电梯并更新地图位姿的任务"""
@@ -446,7 +495,34 @@ class TaskAssignment(Node):
             self.get_logger().error("❌ 按钮操作失败，将尝试恢复头部姿态并继续")
             self.button_press_step = 'resetting_head'
             self._send_head_command(0.0) # 即使失败也要抬头
-    
+
+    def floor_arrival_callback(self, msg: String):
+        """楼层识别完成回调"""
+        if not self.waiting_for_arrival:
+            return
+        
+        try:
+            data = json.loads(msg.data)
+            status = data.get('status', '')
+            identified_floor = data.get('identified_floor', '')
+            target_floor = data.get('target_floor', '')
+            
+            if status == 'completed' and identified_floor == target_floor:
+                self.get_logger().info(f"✅ 已到达目标楼层 {target_floor}")
+                self.waiting_for_arrival = False
+                self.move_to_next_task()
+            elif status == 'completed' and identified_floor != target_floor:
+                self.get_logger().info(f"当前楼层 {identified_floor}，继续等待目标楼层 {target_floor}")
+                # 可以在这里设置重试或继续等待
+            elif status == 'failed':
+                self.get_logger().error("❌ 楼层识别失败")
+                self.waiting_for_arrival = False
+                self.move_to_next_task()  # 或根据需求处理失败情况
+                
+        except (json.JSONDecodeError, AttributeError) as e:
+            self.get_logger().error(f"解析楼层识别消息失败: {e}")
+            self.waiting_for_arrival = False
+
     def reset_button_sequence(self):
         """重置按钮按压序列的状态"""
         self.waiting_for_button = False
@@ -465,6 +541,7 @@ class TaskAssignment(Node):
             'waiting_for_button': self.waiting_for_button,
             'waiting_for_door': self.waiting_for_door,
             'button_press_step': self.button_press_step,
+            'waiting_for_arrival':self.waiting_for_arrival,
             'is_moving': self.is_moving,
             'timestamp': time.time()
         }
