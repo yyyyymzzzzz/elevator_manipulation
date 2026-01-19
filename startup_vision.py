@@ -23,6 +23,10 @@ def generate_launch_description():
         '/home/nvidia/Workspace/elevator_manipulation/config',
         'button_3d_visualizer_params.yaml'
     )
+    realtime_button_target_planner_config = os.path.join(
+        '/home/cat/Workspace/elevator_manipulation/config',
+        'realtime_button_target_planner_params.yaml'
+    )
     
     # 相机节点
     camera_launch = IncludeLaunchDescription(
@@ -42,7 +46,7 @@ def generate_launch_description():
         executable='static_transform_publisher',
         name='static_camera_tf_publisher',
         arguments=['0.08', '0.005', '0', '0', '1.5708', '1.5708', 'Camera3_Link', 'camera_link'],
-    )
+    )                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
 
     # 按钮检测节点
     button_detector_node = Node(
@@ -51,6 +55,15 @@ def generate_launch_description():
         name='button_detector',
         parameters=[button_detector_config],
         output='screen'
+    )
+
+    realtime_planner_node = Node(
+        package='elevator_perception',
+        executable='realtime_button_target_planner',
+        name='realtime_button_target_planner',
+        parameters=[realtime_button_target_planner_config],
+        output='screen',
+        emulate_tty=True
     )
 
     # 按钮3D可视化节点
@@ -90,6 +103,7 @@ def generate_launch_description():
         camera_launch,
         static_tf_node,
         button_detector_node,
+        realtime_planner_node,
         button_3d_visualizer_node,
         look_panel_node,
         rviz_node,
