@@ -7,6 +7,7 @@ button_target_planner:
 
     # 坐标系设置
     target_frame: "world"      # 目标坐标系
+    # 如果使用纯视觉模式，请将target_link更改为"camera_link"
     camera_frame: "camera_color_optical_frame" # 相机坐标系
 
     # 可视化参数

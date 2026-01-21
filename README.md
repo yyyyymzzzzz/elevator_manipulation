@@ -6,7 +6,7 @@
 
 该仓库包含了一系列用于控制机器人在电梯环境中执行任务的软件包。这些任务包括使用机械臂进行精确操作（例如按下电梯按钮），以及通过移动底盘在环境中导航。该系统主要使用深度相机进行环境感知，并使用MoveIt 2进行运动规划。
 
-
+项目使用ROS2 Humble，建议在Ubuntu 22.04系统中运行。
 
 ## 软件包
 
@@ -28,13 +28,14 @@
 ### 1. `elevator_perception`
 
 * **路径**: `src/elevator_perception/`
-* **功能**: 负责环境感知，特别是电梯按钮的检测和三维空间定位。
+* **功能**: 负责环境感知，特别是电梯按钮和面板的检测和三维空间定位。
 
 | 节点                        | 功能描述                                                                               | 订阅的Topic                                                                                                                                                     | 发布的Topic                                                                                         |
 | :-------------------------- | :------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------- |
-| **`button_detector_node`**  | 订阅摄像头图像流，使用YOLO模型检测图像中的电梯按钮，并发布2D检测框结果。               | `/camera/color/image_raw` (sensor\_msgs/Image)                                                                                                                  | `/detection_results` (vision\_msgs/Detection2DArray)                                                |
+| **`button_detector_node`**  | 订阅相机图像流，使用YOLO模型检测图像中的电梯按钮，并发布2D检测框结果。                 | `/camera/color/image_raw` (sensor\_msgs/Image)                                                                                                                  | `/detection_results` (vision\_msgs/Detection2DArray)                                                |
 | **`button_target_planner`** | 结合2D检测结果和深度相机信息，计算出目标按钮在三维空间中的精确坐标，并发布为目标位姿。 | `/detection_results` (vision\_msgs/Detection2DArray)<br>`/camera/depth/image_raw` (sensor\_msgs/Image)<br>`/camera/depth/camera_info` (sensor\_msgs/CameraInfo) | `/target_pose` (geometry\_msgs/PoseStamped)<br>`/visualization_marker` (visualization\_msgs/Marker) |
 | **`button_3d_visualizer`**  | 订阅3D检测结果，并在RViz中将其可视化，方便调试。                                       | `/target_pose` (geometry\_msgs/PoseStamped)                                                                                                                     | `/visualization_marker` (visualization\_msgs/Marker)                                                |
+| **`panel_perception`**      | 订阅相机画面识别结果，返回是否到达目标楼层                                             | `/detector/result` (String)                                                                                                                                     | `/look_floor/completed` (String)                                                                    |
 
 ### 2. `elevator_arm_control`
 
@@ -44,7 +45,7 @@
 | 节点                  | 功能描述                                                                                         | 订阅的Topic                                                                              | 提供的Service                      |
 | :-------------------- | :----------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------- | :--------------------------------- |
 | **`arm_controller`**  | 接收目标位姿，控制机械臂移动到指定位置。它通常是MoveIt的上层封装，用于执行具体的轨迹规划和运动。 | `/target_pose` (geometry\_msgs/PoseStamped)                                              | `press_button` (std\_srvs/Trigger) |
-| **`button_follower`** | 实现基于视觉伺服的精细控制，用于在最后阶段精确对准并按下按钮。                            | `/target_pose` (geometry\_msgs/PoseStamped)<br>`/joint_states` (sensor\_msgs/JointState) | -                                  |
+| **`button_follower`** | 实现基于视觉伺服的精细控制，用于在最后阶段精确对准并按下按钮。                                   | `/target_pose` (geometry\_msgs/PoseStamped)<br>`/joint_states` (sensor\_msgs/JointState) | -                                  |
 
 ### 3. `agv_controller`
 
@@ -79,7 +80,6 @@
 
 * `rclpy`, `rclcpp`
 * `moveit_ros`
-* `gazebo_ros`
 * `cv_bridge`, `OpenCV`
 * `tf2_ros`
 * `sensor_msgs`, `geometry_msgs`, `vision_msgs`, `std_msgs`
@@ -95,23 +95,38 @@
     ```bash
     colcon build --symlink-install
     ```
+4. **如果使用Orbbec相机，需要参考官方SDK仓库接口权限**
+   
+    仓库 [链接](https://github.com/orbbec/OrbbecSDK_ROS2)
 
 ## 使用
-
-1.  **Source工作空间**:
-    ```bash
-    source install/setup.sh
-    ```
-2.  **使用合并启动脚本启动**:
-    ```bash 
-    ros2 launch startup_contrainer.py
-    ```
-3. **启动任务发布节点**
-    ```
-    ros2 launch startup_control.py
-    ```
-    具体目标点和可在`config/task.yaml`自定义。
-
+- 在Lumi平台中启动完整功能包
+  1.  **Source工作空间**:
+      ```bash
+      source install/setup.sh
+      ```
+  2.  **使用合并启动脚本启动**:
+      ```bash 
+      ros2 launch startup_contrainer.py
+      ```
+  3. **启动任务发布节点**
+      ```
+      ros2 launch startup_control.py
+      ```
+      具体目标点和可在`config/task.yaml`自定义。
+- 在rk3588平台启动视觉模块
+  1.  **Source工作空间**:
+      ```bash
+      source install/setup.sh
+      ```
+  2.  **修改相对坐标系名称**:
+      由于没有运行机器人控制节点，缺少机器人坐标系，需要调整坐标系配置
+      需要在`button_3d_visualizer_params.yaml`, `button_target_planner_params.yaml`, `realtime_button_target_planner_params.yaml`参数配置中修改`target_link`为`camera_link`。
+  3. **启动视觉部分发布节点**
+      ```
+      ros2 launch startup_vision.py
+      ```
+  
 ## 贡献
 
 我们欢迎对该项目的贡献。如果您想做出贡献，请随时Fork该仓库并提交Pull Request。
