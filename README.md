@@ -130,3 +130,12 @@
 ## 贡献
 
 我们欢迎对该项目的贡献。如果您想做出贡献，请随时Fork该仓库并提交Pull Request。
+
+## 作者
+
+**Mingzhe Ye**  
+上海交通大学
+
+## 许可证
+
+本项目采用 MIT License 开源许可证 - 详情请参阅 [LICENSE](LICENSE) 文件。
