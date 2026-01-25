@@ -9,6 +9,10 @@ realtime_button_target_planner:
     fixed_normal_x: 0.0            # 固定法向量 X 分量
     fixed_normal_y: 1.0            # 固定法向量 Y 分量  
     fixed_normal_z: 0.0           # 固定法向量 Z 分量
+    # 使用纯视觉模式需要更改坐标系配置
+    # fixed_normal_x: -1.0          
+    # fixed_normal_y: 0.0         
+    # fixed_normal_z: 0.0     
     
     # 坐标系配置
     target_frame: "world"
@@ -16,7 +20,7 @@ realtime_button_target_planner:
     camera_frame: "camera_color_optical_frame"
     
     # 可视化参数
-    marker_scale: 0.02
+    marker_scale: 0.01
     marker_lifetime: 0.5           # 较短的标记生命周期以提高响应性
     
     # 实时性优化参数
@@ -30,6 +34,7 @@ realtime_button_target_planner:
     # all: 同时发布所有按钮的目标位置JSON
     # closest: 只发布最近的按钮目标位置
     button_selection_method: "sequential"
+    # button_selection_method: "all"
     sequential_duration: 20.0      # 顺序模式下每个按钮的持续时间 (s)
     
     # 目标清理参数

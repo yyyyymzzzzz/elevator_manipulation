@@ -5,7 +5,7 @@ button_3d_visualizer:
     min_depth: 0.2       # 最小有效深度值 (米)
 
     # 标记显示参数
-    marker_scale: 0.04   # 标记大小
+    marker_scale: 0.02   # 标记大小
     marker_lifetime: 1.0  # 标记生存时间 (秒)
 
     # 坐标系设置

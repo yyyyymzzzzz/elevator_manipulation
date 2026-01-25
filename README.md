@@ -115,14 +115,20 @@
       ```
       具体目标点和可在`config/task.yaml`自定义。
 - 在rk3588平台启动视觉模块
-  1.  **Source工作空间**:
+  1.  **修改相对坐标系名称**:
+      由于没有运行机器人控制节点，缺少机器人坐标系，需要调整坐标系配置
+      需要在`button_3d_visualizer_params.yaml`, `button_target_planner_params.yaml`, `realtime_button_target_planner_params.yaml`参数配置中修改`target_link`为`camera_link`。
+  2.  **修正所有绝对路径**:
+      将`/config/*.yaml`中规定的路径修正，以正确读取文件。
+  3.  **修正相机启动脚本为对应的相机型号**:
+      需要在`startup_vision.py`中将相机切换为匹配的型号。
+  4.  **修改法向量方向和目标展示方式**:
+      具体修改方法参考`realtime_button_target_planner_params.yaml`中的注释。
+  5.  **Source工作空间**:
       ```bash
       source install/setup.sh
       ```
-  2.  **修改相对坐标系名称**:
-      由于没有运行机器人控制节点，缺少机器人坐标系，需要调整坐标系配置
-      需要在`button_3d_visualizer_params.yaml`, `button_target_planner_params.yaml`, `realtime_button_target_planner_params.yaml`参数配置中修改`target_link`为`camera_link`。
-  3. **启动视觉部分发布节点**
+  6. **启动视觉部分发布节点**
       ```
       ros2 launch startup_vision.py
       ```

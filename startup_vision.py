@@ -35,6 +35,7 @@ def generate_launch_description():
                 get_package_share_directory('orbbec_camera'),
                 'launch',
                 'gemini2L.launch.py'
+                # 'gemini345.launch.py'
             )
         ),
         launch_arguments={'use_sim_time': use_sim_time}.items()
