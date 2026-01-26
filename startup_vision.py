@@ -17,7 +17,7 @@ def generate_launch_description():
     # 配置文件路径
     button_detector_config = os.path.join(
         '/home/nvidia/Workspace/elevator_manipulation/config',
-        'button_detector_params.yaml'
+        'button_detector_npu_params.yaml'
     )
     button_3d_config = os.path.join(
         '/home/nvidia/Workspace/elevator_manipulation/config',
@@ -52,7 +52,8 @@ def generate_launch_description():
     # 按钮检测节点
     button_detector_node = Node(
         package='elevator_perception',
-        executable='button_detector_node',
+        executable='button_detector_npu_node', # rk3588使用npu推理
+        # executable='button_detector_node',
         name='button_detector',
         parameters=[button_detector_config],
         output='screen'

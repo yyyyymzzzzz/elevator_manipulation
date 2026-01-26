@@ -1,0 +1,16 @@
+button_detector:
+  ros__parameters:
+    # 模型路径 (.rknn)
+    model_path: "/home/cat/Workspace/elevator_manipulation/model/xz_model/best_v3.rknn"
+    
+    # 类别名称列表 (需要与训练时顺序一致)
+    class_names: ['button_6', 'button_5', 'button_4', 'button_3', 'button_2', 'button_1', 'button_b1', 'button_open', 'button_close', 'button_alarm', 'display_1', 'display_2', 'display_3', 'display_4', 'display_5', 'display_6', 'button_up', 'button_down']
+
+    # 检测阈值
+    confidence_threshold: 0.5
+    nms_threshold: 0.45
+    
+    # 内录功能 (用于采集数据集)
+    enable_recording: false
+    recording_save_path: "/home/cat/Workspace/elevator_manipulation/data/dataset"
+    recording_fps: 5.0
