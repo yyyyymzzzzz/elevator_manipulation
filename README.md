@@ -84,6 +84,37 @@
 * `tf2_ros`
 * `sensor_msgs`, `geometry_msgs`, `vision_msgs`, `std_msgs`
 
+## 训练
+- 采集数据
+  - 在`/config/button_detector_params.yaml`中开启内录并正常启动程序，采集电梯按钮图像。
+  - 采集的图片与实际运行时进行推理的图片完全一致。
+- 标注数据
+  - 使用[labelImg](https://github.com/HumanSignal/labelImg)标注按钮图像。
+  - 注意数据集导出格式使用yolo格式。
+- 划分数据集
+  - 使用`/train/dataloader.py`将采集到的图像随机划分成训练集和验证集。能够自动将标签与同名图片进行匹配。
+  - 划分比例为8:2，即80%为训练集，20%为验证集。
+  - 注意修改标签目录、原始图片目录、导出目录。
+- 开始训练
+  - 使用`/train/train.py`开始训练模型。
+  - 注意修改配置文件路径。
+- 模型导出
+  - 如果需要在rk3588上部署NPU推理，在训练完成后，需要使用`/train/pt_to_rknn.py`导出模型。
+  - 安装 RKNN-Toolkit2 ，需要根据系统选择对应的 whl 包。如果没有 whl，需要去[rknn-tookit2仓库](https://github.com/rockchip-linux/rknn-toolkit2/tree/master/rknn-toolkit2/packages)下载并安装。
+    ```bash 
+    pip install rknn_toolkit2-*-cp38-*-linux_x86_64.w
+    ```
+  - 脚本会先将`*.pt`模型转换为`*.onnx`模型，然后将`*.onnx`模型转换为所需的`*.rknn`模型。
+- 部署NPU推理
+  - 将导出的`*.rknn`模型部署到rk3588平台需要进行以下操作。
+  - 需要在rk3588平台上安装RKNN-Toolkit2运行时库，并将识别节点由`button_detector_node`替换为`button_detector_npu_node`。
+  - 安装 RKNN-Toolkit-lite2 ，需要根据系统选择对应的 whl 包。如果没有 whl，需要去[rknn-tookit-lite2仓库](https://github.com/rockchip-linux/rknn-toolkit2/tree/master/rknn_toolkit_lite2/packages)下载并安装。
+    ```bash 
+    pip install rknn_toolkit_lite2-*.whl
+    ```
+  - 运行时`.so`库可以在[rknn-tookit2仓库](https://github.com/airockchip/rknn-toolkit2/blob/master/rknpu2/runtime/Linux/librknn_api/aarch64/librknnrt.so)下载，需要将`librknnrt.so`复制到rk3588平台的`/usr/lib`目录下。
+  
+
 ## 安装
 
 1.  **克隆仓库**:
@@ -97,7 +128,7 @@
     ```
 4. **如果使用Orbbec相机，需要参考官方SDK仓库接口权限**
    
-    仓库 [链接](https://github.com/orbbec/OrbbecSDK_ROS2)
+    [OrbbecSDK_ROS2 仓库链接](https://github.com/orbbec/OrbbecSDK_ROS2)
 
 ## 使用
 - 在Lumi平台中启动完整功能包
@@ -124,15 +155,18 @@
       需要在`startup_vision.py`中将相机切换为匹配的型号。
   4.  **修改法向量方向和目标展示方式**:
       具体修改方法参考`realtime_button_target_planner_params.yaml`中的注释。
-  5.  **Source工作空间**:
+  5.  **修改模型推理方法**:
+      由于rk3588平台计算能力有限，需要将模型推理方法切换为NPU推理。
+      需要在`startup_vision.py`中修改启动的识别节点为`button_detector_npu_node`。
+  6.  **Source工作空间**:
       ```bash
       source install/setup.sh
       ```
-  6. **启动视觉部分发布节点**
+  7. **启动视觉部分发布节点**
       ```
       ros2 launch startup_vision.py
       ```
-  
+
 ## 贡献
 
 我们欢迎对该项目的贡献。如果您想做出贡献，请随时Fork该仓库并提交Pull Request。
