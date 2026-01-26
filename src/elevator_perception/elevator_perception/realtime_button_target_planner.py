@@ -25,6 +25,7 @@ class RealtimeButtonTargetPlanner(Node):
         self.declare_parameters(
             namespace='',
             parameters=[
+                ('require_agv_control', True),  # 是否需要AGV控制指令才发布目标
                 ('target_distance', 0.20),  # 目标位置距离按钮平面的距离 (m)
                 ('use_fixed_normal', True),  # 是否使用固定法向量
                 ('fixed_normal_x', 0.0),
@@ -46,6 +47,7 @@ class RealtimeButtonTargetPlanner(Node):
         )
         
         # 获取参数值
+        self.require_agv_control = self.get_parameter('require_agv_control').get_parameter_value().bool_value
         self.target_distance = self.get_parameter('target_distance').get_parameter_value().double_value
         self.use_fixed_normal = self.get_parameter('use_fixed_normal').get_parameter_value().bool_value
         self.fixed_normal = np.array([
@@ -187,6 +189,7 @@ class RealtimeButtonTargetPlanner(Node):
             )
         
         self.get_logger().info('实时按钮目标规划节点已启动')
+        self.get_logger().info(f'AGV控制要求: {"启用" if self.require_agv_control else "禁用(测试模式)"}')
         self.get_logger().info(f'目标距离: {self.target_distance}m')
         self.get_logger().info(f'使用固定法向量: {self.use_fixed_normal}')
         if self.use_fixed_normal:
@@ -713,8 +716,8 @@ class RealtimeButtonTargetPlanner(Node):
         if self.agv_is_moving:
             return
         
-        # 如果没有AGV控制目标，则不发布任何目标
-        if not self.use_agv_control or self.agv_target_button is None:
+        # 如果需要AGV控制且没有AGV控制目标，则不发布任何目标
+        if self.require_agv_control and (not self.use_agv_control or self.agv_target_button is None):
             return
             
         # 如果AGV刚停止，检查是否已经等待足够时间
@@ -727,8 +730,18 @@ class RealtimeButtonTargetPlanner(Node):
         if not self.target_poses:
             return
         
-        # 只发布AGV控制模式的目标
-        self.publish_agv_controlled_target()
+        # 根据模式发布目标
+        if self.require_agv_control:
+            # AGV控制模式：只发布AGV指定的目标
+            self.publish_agv_controlled_target()
+        else:
+            # 测试模式：根据配置的选择方法发布
+            if self.button_selection_method == 'sequential':
+                self.publish_sequential_target()
+            elif self.button_selection_method == 'all':
+                self.publish_all_targets()
+            elif self.button_selection_method == 'closest':
+                self.publish_closest_target()
         
         # 发布可视化标记
         self.publish_visualization()

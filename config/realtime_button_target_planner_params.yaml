@@ -2,6 +2,9 @@
 
 realtime_button_target_planner:
   ros__parameters:
+    # 测试模式开关
+    require_agv_control: false     # 是否需要AGV控制指令才发布目标 (测试视觉时设为false)
+    
     # 目标位置计算参数
     target_distance: 0.14          # 目标位置距按钮的距离 (m)
     use_fixed_normal: true         # 是否使用固定法向量（避免复杂的点云计算）
